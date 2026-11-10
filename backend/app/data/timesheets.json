@@ -1,0 +1,30 @@
+{
+  "user_id": "u_priya",
+  "current_week_start": "2026-11-09",
+  "confirmed_entries": [
+    {
+      "id": "entry_1794325884604",
+      "date": "2026-11-09",
+      "project_code": "ACME-WEB",
+      "project_name": "Acme Website Redesign",
+      "task": "Design",
+      "hours": 3.0,
+      "is_billable": true,
+      "user_edited": false,
+      "status": "confirmed",
+      "confirmed_at": "2026-11-10T21:21:24.604955"
+    },
+    {
+      "id": "entry_1794325884604",
+      "date": "2026-11-09",
+      "project_code": "INT-OPS",
+      "project_name": "Internal Operations",
+      "task": "Standup",
+      "hours": 1.0,
+      "is_billable": false,
+      "user_edited": false,
+      "status": "confirmed",
+      "confirmed_at": "2026-11-10T21:21:24.604982"
+    }
+  ]
+}
