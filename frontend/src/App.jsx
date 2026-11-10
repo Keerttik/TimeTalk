@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Briefcase, Shield, Clock, Layers, Sparkles } from 'lucide-react';
+import { Briefcase, Shield, Clock, Layers, Sparkles, BarChart3, PlayCircle } from 'lucide-react';
 import ChatInterface from './components/ChatInterface';
 import TimesheetGrid from './components/TimesheetGrid';
 import AIValuePanel from './components/AIValuePanel';
 import WhyTraceModal from './components/WhyTraceModal';
+import AdminMacroModal from './components/AdminMacroModal';
 
 export default function App() {
   const [messages, setMessages] = useState([
@@ -18,6 +19,7 @@ export default function App() {
   const [telemetryHistory, setTelemetryHistory] = useState([]);
   const [leakageCaughtRupees, setLeakageCaughtRupees] = useState(0);
   const [inspectingEntry, setInspectingEntry] = useState(null);
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionStartTime] = useState(Date.now());
   const [conversationId] = useState(`conv_${Date.now()}`);
@@ -293,8 +295,16 @@ export default function App() {
             </div>
           </div>
 
-          {/* User Profile Pill */}
-          <div className="flex items-center gap-4">
+          {/* User Profile Pill & Admin Macro Button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowAdminModal(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Admin Macro View (FR10)</span>
+            </button>
+
             <div className="hidden sm:flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
               <Briefcase className="w-3.5 h-3.5 text-slate-400" />
               <span className="text-slate-600">Consultant:</span>
@@ -302,9 +312,10 @@ export default function App() {
               <span className="text-slate-300">|</span>
               <span className="text-slate-500">Rate: ₹1,500/hr</span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+
+            <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-700 font-medium bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
               <Shield className="w-3.5 h-3.5 text-emerald-600" />
-              <span>FR7 Invariant Active (Zero Auto-Commit)</span>
+              <span>FR7 Invariant Active</span>
             </div>
           </div>
         </div>
@@ -355,6 +366,13 @@ export default function App() {
         <WhyTraceModal
           entry={inspectingEntry}
           onClose={() => setInspectingEntry(null)}
+        />
+      )}
+
+      {/* Admin Macro Analytics Modal (FR10) */}
+      {showAdminModal && (
+        <AdminMacroModal
+          onClose={() => setShowAdminModal(false)}
         />
       )}
     </div>

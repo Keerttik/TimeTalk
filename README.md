@@ -22,10 +22,11 @@ Or run frontend and backend independently in two separate terminals:
 ```powershell
 cd backend
 py -m pip install -r requirements.txt
-py -m uvicorn app.main:app --reload --port 8000
+py run.py
 ```
 - Health Check: [http://localhost:8000/health](http://localhost:8000/health)
 - API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Admin Metrics: [http://localhost:8000/api/admin/metrics](http://localhost:8000/api/admin/metrics)
 
 #### Terminal 2 — Frontend (React + Vite):
 ```powershell
@@ -37,49 +38,65 @@ npm run dev
 
 ---
 
-## Phase 1 Implementation Summary
+## Phase-Wise Delivery Breakdown
 
-### Completed Deliverables (FR1, FR2, FR3, FR5, FR7)
+### Phase 1: The Core Loop (`FR1`, `FR2`, `FR3`, `FR5`, `FR7`)
+- **Extraction Engine**: Natural language activity parser extracting dates, hours, and task hints. Resolves relative terms ("yesterday", "today") to exact ISO dates.
+- **Catalogue Grounding**: Strict matching against `mock_catalogue.json` with confidence evaluation.
+- **Weekly Timesheet Grid**: Editable draft rows with inline project/task selectors and billability toggles.
+- **Zero Auto-Commit Invariant (`FR7`)**: 0 rows are committed to master storage without explicit human confirmation.
 
-1. **Extraction Engine (`backend/app/engine/extractor.py`)**
-   - Natural language activity parser extracting dates, hours, task hints, and billability intent.
-   - Relative date resolver: maps "yesterday" to Monday (2026-11-09) and "today" to Tuesday (2026-11-10).
-   - Hybrid inference: Integrates Google Gemini API when `GEMINI_API_KEY` is present, with deterministic fallback parser for offline testing.
+### Phase 2: The Trust Layer & Guardrails (`FR4`, `FR6`, `FR9`)
+- **Ambiguity Clarification (`FR4`)**: Halts on ambiguous inputs (e.g. *"2 hours on Acme development"*) and offers interactive quick-reply chips instead of guessing.
+- **6 Hybrid Anomaly Checks (`FR6`)**:
+  1. `CLOSED_PROJECT`: Detects logging against closed client projects (`INITECH-AUD`).
+  2. `BILLABLE_INTERNAL`: Detects billable hours marked on internal projects (`INT-OPS`).
+  3. `UNUSUAL_HOURS`: Statistical Z-Score outlier detection ($>10.4\text{h}$).
+  4. `WEEKEND_HOLIDAY`: Flags weekend and company holiday logging.
+  5. `BUDGET_BURN`: Warns when project hours exceed $90\%$ of budget.
+  6. `DUPLICATE`: Flags duplicate entries logged on the same date and task.
+- **1-Click Auto-Fix**: One-click inline resolution buttons (`Switch Non-Billable`, `Change to Internal`, `Set to 8h`).
+- **Observability "Why?" Flyout (`FR9`)**: Inspects matching rationale, confidence score, tokens, latency, and 6/6 guardrail check audit checklist.
 
-2. **Catalogue Matcher & Grounding (`backend/app/engine/matcher.py`)**
-   - Strict grounding against `mock_catalogue.json` (`ACME-WEB`, `ACME-MOB`, `GLOBEX-DATA`, `INITECH-AUD`, `INT-OPS`).
-   - Confidence scoring ($0.0 - 1.0$) with $\ge 80\%$ auto-draft threshold.
-   - Ambiguity detection: Identifies underspecified entries (e.g. "Acme development") and requests user clarification instead of guessing.
-
-3. **Weekly Timesheet Grid (`frontend/src/components/TimesheetGrid.jsx`)**
-   - Renders weekly timesheet view for Northwind Consulting.
-   - Visual distinction between Confirmed rows and Draft (AI-generated) rows.
-   - Inline editable inputs for hours, project selector, task selector, and billable status toggle.
-   - "Confirm All Drafts" and individual row "Confirm" / "Discard" buttons.
-   - **FR7 Invariant**: Zero rows are committed to master storage until deliberate user confirmation.
-
-4. **Chat Interface (`frontend/src/components/ChatInterface.jsx`)**
-   - Multi-message conversational thread with test prompt chips.
-   - Interactive clarification quick-reply chips for resolving ambiguous inputs.
-
-5. **Observability & Telemetry (`frontend/src/components/WhyTraceModal.jsx` & `AIValuePanel.jsx`)**
-   - "Why?" modal inspecting confidence scores, reasoning traces, and tokens.
-   - Real-time AI Value & ROI panel tracking tokens, AI costs in paise, time saved, and leakage caught.
+### Phase 3: AI Value Panel, Admin Macro Analytics & Demo (`FR8`, `FR10`)
+- **Live AI Value & ROI Panel (`FR8`)**: Real-time economic telemetry tracking tokens consumed, model cost in paise, time saved, billing leakage caught, and live session ROI ($>10\times$).
+- **Admin Macro Analytics (`FR10`)**: Executive view summarizing total conversations, billable utilization rate, net value created, and quality benchmarks (Edit Rate $< 15\%$). Includes CSV export.
+- **Containerized Railway Deployment**: Multi-stage `Dockerfile`, `Procfile`, and `railway.json` serving both frontend and backend on Railway.
 
 ---
 
-## Verification & Automated Test Suite
+## 90-Second Demo Walkthrough Guide
 
-To run the automated Phase 1 exit criteria test:
+Follow the 5-step narrative defined in `demo_script.md`:
+
+1. **Step 1: Speed Test (0:15 - 0:32)**
+   - Click the test chip: `"Spent 3 hours on the Acme design review yesterday and 1 hour on standup."`
+   - *Result:* Two draft rows appear under yesterday's column in $< 3$ seconds. Shows speed and multi-activity extraction. Click "Confirm All Drafts".
+
+2. **Step 2: No Guessing / Precision (0:32 - 0:48)**
+   - Click or type: `"2 hours on Acme development."`
+   - *Result:* Because confidence is below $80\%$ across Website vs. Mobile, TimeTalk asks: *"Did you work on Acme Website (ACME-WEB) or Acme Mobile (ACME-MOB)?"*. Click `[Acme Mobile (ACME-MOB)]` to stage the draft.
+
+3. **Step 3: Revenue Protection / Leakage (0:48 - 1:05)**
+   - Click or type: `"4 hours on Initech fieldwork today, billable."`
+   - *Result:* Red policy warning appears: *"This project closed on 31 Oct. Time cannot be billed."* Saves ₹12,000 in disputed invoices. Click "Change to Internal" or discard.
+
+4. **Step 4: Observability Trace (1:05 - 1:18)**
+   - Click the **"Why?"** button on any row.
+   - *Result:* Opens the AI Observability drawer showing confidence score, reasoning trail, model latency, and the 6/6 invariant audit checklist.
+
+5. **Step 5: Verifiable ROI & Admin Analytics (1:18 - 1:30)**
+   - Point to the **Live AI Value Panel** on the right (Live ROI $>10\times$, cost in paise).
+   - Click **"Admin Macro View (FR10)"** in the top bar to inspect executive KPIs and click "Export CSV Report".
+
+---
+
+## Automated Verification Suite
+
+Run all phase test suites:
 ```powershell
 cd backend
 py test_phase1.py
+py test_phase2.py
+py test_phase3.py
 ```
-
-### Exit Criteria Results:
-- [x] Input: *"Spent 3 hours on the Acme design review yesterday and 1 hour on internal standup."*
-- [x] Backend produces 2 structured objects matched to `ACME-WEB (Design)` and `INT-OPS (Standup)`.
-- [x] Both draft rows appear under yesterday's date (2026-11-09).
-- [x] Clicking "Confirm" commits rows to storage.
-- [x] Zero rows committed prior to confirmation (FR7 preserved).
-

@@ -3,7 +3,7 @@
   "current_week_start": "2026-11-09",
   "confirmed_entries": [
     {
-      "id": "entry_1794326392312",
+      "id": "entry_1794326974147",
       "date": "2026-11-09",
       "project_code": "ACME-WEB",
       "project_name": "Acme Website Redesign",
@@ -12,10 +12,10 @@
       "is_billable": true,
       "user_edited": false,
       "status": "confirmed",
-      "confirmed_at": "2026-11-10T21:29:52.312738"
+      "confirmed_at": "2026-11-10T21:39:34.148031"
     },
     {
-      "id": "entry_1794326392312",
+      "id": "entry_1794326974148",
       "date": "2026-11-09",
       "project_code": "INT-OPS",
       "project_name": "Internal Operations",
@@ -24,7 +24,19 @@
       "is_billable": false,
       "user_edited": false,
       "status": "confirmed",
-      "confirmed_at": "2026-11-10T21:29:52.312781"
+      "confirmed_at": "2026-11-10T21:39:34.148074"
+    },
+    {
+      "id": "entry_1794326974168",
+      "date": "2026-11-10",
+      "project_code": "ACME-MOB",
+      "project_name": "Acme Mobile App",
+      "task": "Development",
+      "hours": 2.0,
+      "is_billable": true,
+      "user_edited": false,
+      "status": "confirmed",
+      "confirmed_at": "2026-11-10T21:39:34.168801"
     }
   ]
 }

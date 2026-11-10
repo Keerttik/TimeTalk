@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DollarSign, Clock, ShieldCheck, TrendingUp, Info, ChevronDown, ChevronUp, Cpu } from 'lucide-react';
+import { DollarSign, Clock, ShieldCheck, TrendingUp, Info, ChevronDown, ChevronUp, Cpu, Calculator, CheckCircle2 } from 'lucide-react';
 
 export default function AIValuePanel({
   telemetryHistory = [],
@@ -9,7 +9,7 @@ export default function AIValuePanel({
 }) {
   const [showAssumptions, setShowAssumptions] = useState(false);
 
-  // Baseline parameters
+  // Enterprise baseline parameters (PRD Section 5)
   const LOADED_HOURLY_COST = 1500; // INR/hr
   const MANUAL_BASELINE_MINUTES_PER_ENTRY = 2.0; // 2 mins per manual entry
   const GEMINI_COST_PER_MILLION_TOKENS_INR = 8.0; // ₹8 per 1M tokens
@@ -24,7 +24,7 @@ export default function AIValuePanel({
   const aiCostRupees = (totalTokens / 1_000_000) * GEMINI_COST_PER_MILLION_TOKENS_INR;
   const aiCostPaise = Math.round(aiCostRupees * 100);
 
-  // Time Saved
+  // Time Saved calculation
   const manualMinutes = confirmedCount * MANUAL_BASELINE_MINUTES_PER_ENTRY;
   const chatMinutes = chatSeconds / 60;
   const timeSavedMinutes = Math.max(0, Math.round((manualMinutes - (confirmedCount > 0 ? chatMinutes : 0)) * 10) / 10);
@@ -46,8 +46,8 @@ export default function AIValuePanel({
             <TrendingUp className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h3 className="text-xs font-bold text-slate-800">Live AI Value & ROI</h3>
-            <span className="text-[10px] text-slate-500">Real-Time Economic Telemetry</span>
+            <h3 className="text-xs font-bold text-slate-800">Live AI Value & ROI Panel</h3>
+            <span className="text-[10px] text-slate-500">Real-Time Economic Telemetry (FR8)</span>
           </div>
         </div>
 
@@ -55,20 +55,29 @@ export default function AIValuePanel({
           onClick={() => setShowAssumptions(!showAssumptions)}
           className="text-[10px] text-slate-500 hover:text-indigo-600 flex items-center gap-0.5 font-medium cursor-pointer"
         >
-          <Info className="w-3 h-3" />
-          <span>Assumptions</span>
+          <Calculator className="w-3 h-3" />
+          <span>Assumptions & Formula</span>
           {showAssumptions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         </button>
       </div>
 
-      {/* Assumptions Drawer */}
+      {/* Assumptions & Formula Drawer */}
       {showAssumptions && (
-        <div className="px-4 py-2.5 bg-indigo-50/50 border-b border-indigo-100 text-[11px] text-slate-600 space-y-1">
-          <p className="font-semibold text-indigo-900">Configurable Enterprise Parameters:</p>
-          <div className="grid grid-cols-2 gap-2 mt-1">
+        <div className="px-4 py-3 bg-indigo-50/60 border-b border-indigo-100 text-[11px] text-slate-700 space-y-2">
+          <div className="flex items-center justify-between font-semibold text-indigo-900 border-b border-indigo-200/60 pb-1">
+            <span>ROI Mathematical Formulation:</span>
+            <span className="text-[10px] font-normal text-indigo-700">KaTeX / PRD Spec</span>
+          </div>
+
+          {/* Mathematical Equation Display */}
+          <div className="p-2 bg-white rounded-lg border border-indigo-200 font-mono text-[11px] text-indigo-950 text-center shadow-2xs">
+            ROI = (Value of Time Saved + Billing Leakage Caught) / AI Cost
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600">
             <div>• Loaded Cost: <strong>₹1,500/hr</strong></div>
             <div>• Manual Baseline: <strong>2.0 min/entry</strong></div>
-            <div>• Model: <strong>Gemini 2.5 Flash</strong></div>
+            <div>• Inference Model: <strong>Gemini 2.5 Flash</strong></div>
             <div>• Model Pricing: <strong>₹8 / 1M tokens</strong></div>
           </div>
         </div>
@@ -77,14 +86,21 @@ export default function AIValuePanel({
       {/* Key Metric Tiles */}
       <div className="p-4 grid grid-cols-2 gap-3">
         {/* Live ROI Tile */}
-        <div className="col-span-2 p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-xl text-white shadow-sm flex items-center justify-between">
+        <div className="col-span-2 p-3.5 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-xl text-white shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-100">Live Session ROI</span>
-            <div className="text-2xl font-black mt-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-200">Live Session ROI</span>
+              {liveROI >= 10 && (
+                <span className="text-[9px] font-extrabold uppercase bg-emerald-400 text-slate-900 px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
+                  <CheckCircle2 className="w-2.5 h-2.5" /> &gt;10x Target Met
+                </span>
+              )}
+            </div>
+            <div className="text-3xl font-black mt-0.5 tracking-tight">
               {liveROI > 0 ? `${liveROI}x` : '0x'}
             </div>
-            <span className="text-[10px] text-indigo-200">
-              ₹{Math.round(totalValueRupees).toLocaleString('en-IN')} value created vs ₹{aiCostRupees.toFixed(3)} cost
+            <span className="text-[10px] text-indigo-200 block mt-0.5">
+              ₹{Math.round(totalValueRupees).toLocaleString('en-IN')} economic value vs ₹{aiCostRupees.toFixed(3)} cost
             </span>
           </div>
           <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shrink-0">
@@ -116,7 +132,7 @@ export default function AIValuePanel({
             ₹{leakageCaughtRupees.toLocaleString('en-IN')}
           </div>
           <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-            In disputed invoices
+            Disputed invoices blocked
           </div>
         </div>
 
@@ -134,4 +150,3 @@ export default function AIValuePanel({
     </div>
   );
 }
-
