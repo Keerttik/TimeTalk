@@ -89,3 +89,4 @@ export const QUICK_PROMPTS = [
     text: "4 hours on Initech fieldwork today, billable."
   }
 ];
+

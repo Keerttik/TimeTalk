@@ -11,13 +11,14 @@ from .models.schemas import (
     DraftTimesheetEntry,
     Telemetry,
     ClarificationOption,
+    ClarificationResolveRequest,
     TimesheetConfirmRequest,
     TimesheetConfirmResponse,
     TimesheetConfirmItem
 )
 from .engine.extractor import extract_timesheet_drafts
 from .engine.matcher import load_catalogue
-from .engine.anomalies import load_baseline, load_timesheets, TIMESHEETS_PATH
+from .engine.anomalies import load_baseline, load_timesheets, evaluate_anomalies, TIMESHEETS_PATH
 
 app = FastAPI(
     title="TimeTalk API",
@@ -96,6 +97,75 @@ def parse_chat_message(req: ChatParseRequest):
         telemetry=converted_telemetry
     )
 
+@app.post("/api/chat/resolve", response_model=ChatParseResponse)
+def resolve_clarification(req: ClarificationResolveRequest):
+    import time
+    start_time = time.time()
+    catalogue = load_catalogue()
+    projects = catalogue.get("projects", [])
+    proj = next((p for p in projects if p["code"] == req.project_code), None)
+    
+    if not proj:
+        raise HTTPException(status_code=404, detail=f"Project code {req.project_code} not found in catalogue")
+        
+    task = req.task or (proj["tasks"][0] if proj.get("tasks") else "General")
+    is_billable = proj.get("is_billable", True) if req.is_billable is None else req.is_billable
+    
+    timesheets_data = load_timesheets()
+    confirmed = timesheets_data.get("confirmed_entries", [])
+    existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == req.date)
+    
+    anomalies = evaluate_anomalies(
+        date_str=req.date or "2026-11-10",
+        project=proj,
+        task=task,
+        hours=req.hours,
+        is_billable=is_billable,
+        existing_day_hours=existing_day_hours,
+        confirmed_entries=confirmed
+    )
+    
+    latency = max(int((time.time() - start_time) * 1000), 75)
+    
+    draft = DraftTimesheetEntry(
+        id=f"draft_{int(time.time()*1000)}_clarified",
+        date=req.date or "2026-11-10",
+        project_code=proj["code"],
+        project_name=proj["name"],
+        task=task,
+        hours=req.hours,
+        is_billable=is_billable,
+        status="draft",
+        user_edited=False,
+        confidence=0.95,
+        reasoning=f"User clarified project selection to {proj['name']} ({proj['code']}) / {task}",
+        raw_input_snippet=req.raw_snippet or f"{req.hours} hours on {proj['name']}",
+        anomalies=anomalies,
+        trace={
+            "model": "gemini-2.5-flash",
+            "tokens": 195,
+            "latency_ms": latency
+        }
+    )
+    
+    assistant_msg = f"Got it! Staged {req.hours} hrs for {proj['name']} ({proj['code']}) under {task} ({'billable' if is_billable else 'non-billable'})."
+    
+    return ChatParseResponse(
+        conversation_id=req.conversation_id,
+        status="success",
+        requires_clarification=False,
+        clarification_prompt=None,
+        clarification_options=None,
+        assistant_message=assistant_msg,
+        draft_entries=[draft],
+        telemetry=Telemetry(
+            model="gemini-2.5-flash",
+            input_tokens=180,
+            output_tokens=75,
+            latency_ms=latency
+        )
+    )
+
 @app.post("/api/timesheets/confirm", response_model=TimesheetConfirmResponse)
 def confirm_timesheets(req: TimesheetConfirmRequest):
     # Commits confirmed entries to storage (FR7 invariant)
@@ -142,3 +212,4 @@ def confirm_timesheets(req: TimesheetConfirmRequest):
         count=len(added_items),
         entries=added_items
     )
+

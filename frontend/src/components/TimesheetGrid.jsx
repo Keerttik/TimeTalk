@@ -182,8 +182,15 @@ export default function TimesheetGrid({
                     <AnomalyWarning
                       anomalies={draft.anomalies}
                       onFix={(fix) => {
+                        const remainingAnomalies = (draft.anomalies || []).filter(a => {
+                          if (fix.action === 'set_non_billable' && a.rule_id === 'BILLABLE_INTERNAL') return false;
+                          if (fix.action === 'change_project' && (a.rule_id === 'CLOSED_PROJECT' || a.rule_id === 'BUDGET_BURN')) return false;
+                          if (fix.action === 'adjust_hours' && a.rule_id === 'UNUSUAL_HOURS') return false;
+                          return true;
+                        });
+
                         if (fix.action === 'set_non_billable') {
-                          onUpdateDraft(draft.id, { is_billable: false, user_edited: true });
+                          onUpdateDraft(draft.id, { is_billable: false, user_edited: true, anomalies: remainingAnomalies });
                         } else if (fix.action === 'change_project') {
                           const proj = projects.find(p => p.code === fix.value);
                           onUpdateDraft(draft.id, {
@@ -191,10 +198,11 @@ export default function TimesheetGrid({
                             project_name: proj?.name || fix.value,
                             task: proj?.tasks[0] || 'General',
                             is_billable: proj ? proj.is_billable : false,
-                            user_edited: true
+                            user_edited: true,
+                            anomalies: remainingAnomalies
                           });
                         } else if (fix.action === 'adjust_hours') {
-                          onUpdateDraft(draft.id, { hours: fix.value, user_edited: true });
+                          onUpdateDraft(draft.id, { hours: fix.value, user_edited: true, anomalies: remainingAnomalies });
                         }
                       }}
                     />
@@ -294,3 +302,4 @@ export default function TimesheetGrid({
     </div>
   );
 }
+

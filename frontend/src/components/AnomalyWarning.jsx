@@ -30,13 +30,19 @@ export default function AnomalyWarning({ anomalies = [], onFix }) {
               <button
                 type="button"
                 onClick={() => onFix(anomaly.suggested_fix)}
-                className={`ml-2 text-[11px] font-semibold px-2 py-0.5 rounded shadow-xs cursor-pointer transition ${
+                className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded shadow-xs cursor-pointer transition whitespace-nowrap ${
                   isError
                     ? 'bg-rose-600 hover:bg-rose-700 text-white'
                     : 'bg-amber-600 hover:bg-amber-700 text-white'
                 }`}
               >
-                Auto-Fix
+                {anomaly.suggested_fix.action === 'set_non_billable'
+                  ? 'Switch Non-Billable'
+                  : anomaly.suggested_fix.action === 'change_project'
+                  ? 'Change to Internal'
+                  : anomaly.suggested_fix.action === 'adjust_hours'
+                  ? `Set to ${anomaly.suggested_fix.value}h`
+                  : 'Auto-Fix'}
               </button>
             )}
           </div>
@@ -45,3 +51,4 @@ export default function AnomalyWarning({ anomalies = [], onFix }) {
     </div>
   );
 }
+

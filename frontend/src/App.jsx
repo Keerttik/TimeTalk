@@ -106,14 +106,53 @@ export default function App() {
   };
 
   // Handle Clarification Option Selection (e.g. Acme Mobile)
-  const handleSelectClarification = (option) => {
+  const handleSelectClarification = async (option) => {
     const userMsg = {
       sender: 'user',
       text: `Selected: ${option.label}`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
 
+    try {
+      const res = await fetch('/api/chat/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          user_id: 'u_priya',
+          project_code: option.project_code,
+          task: option.task || 'Development',
+          hours: 2.0,
+          date: '2026-11-10',
+          raw_snippet: `2 hours on ${option.label}`
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.telemetry) {
+          setTelemetryHistory((prev) => [...prev, data.telemetry]);
+        }
+        if (data.draft_entries && data.draft_entries.length > 0) {
+          setDraftEntries((prev) => [...prev, ...data.draft_entries]);
+        }
+        const botAck = {
+          sender: 'bot',
+          text: data.assistant_message || `Got it! Staged 2.0 hours for ${option.label}. Review the row in your timesheet table below.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setMessages((prev) => [...prev, botAck]);
+        return;
+      }
+    } catch (e) {
+      console.warn('Backend resolve error, using local fallback:', e);
+    } finally {
+      setIsLoading(false);
+    }
+
+    // Local fallback
     const newDraft = {
       id: `draft_${Date.now()}_clarified`,
       date: '2026-11-10',

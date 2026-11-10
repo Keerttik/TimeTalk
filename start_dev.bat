@@ -5,3 +5,4 @@ echo Starting TimeTalk Frontend on port 5173...
 start cmd /k "cd frontend && npm run dev"
 echo TimeTalk services launched!
 echo Open http://localhost:5173 in your browser.
+

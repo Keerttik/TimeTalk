@@ -108,6 +108,20 @@ def match_activity_to_catalogue(
                 top_task = "Design"
                 top_score = 0.92
                 break
+    elif is_acme and has_mob:
+        for p in projects:
+            if p["code"] == "ACME-MOB":
+                top_proj = p
+                top_task = "Development" if is_dev else (top_task or "Design")
+                top_score = 0.93
+                break
+    elif is_acme and has_web:
+        for p in projects:
+            if p["code"] == "ACME-WEB":
+                top_proj = p
+                top_task = "Development" if is_dev else (top_task or "Design")
+                top_score = 0.93
+                break
     elif "standup" in query or "internal" in query:
         for p in projects:
             if p["code"] == "INT-OPS":
@@ -148,3 +162,4 @@ def match_activity_to_catalogue(
         "clarification_options": None,
         "reasoning": f"Matched '{raw_snippet.strip()}' to {top_proj['code']} / {top_task} ({int(normalized_confidence*100)}% confidence)"
     }
+

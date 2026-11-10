@@ -34,6 +34,16 @@ class ClarificationOption(BaseModel):
     project_code: str
     task: Optional[str] = None
 
+class ClarificationResolveRequest(BaseModel):
+    conversation_id: str
+    user_id: str = "u_priya"
+    project_code: str
+    task: Optional[str] = "Development"
+    hours: float = 2.0
+    date: Optional[str] = "2026-11-10"
+    is_billable: Optional[bool] = None
+    raw_snippet: Optional[str] = None
+
 class ChatParseRequest(BaseModel):
     conversation_id: str
     user_id: str = "u_priya"
@@ -68,3 +78,4 @@ class TimesheetConfirmResponse(BaseModel):
     status: str = "committed"
     count: int
     entries: List[TimesheetConfirmItem]
+

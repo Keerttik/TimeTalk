@@ -78,7 +78,7 @@ export default function WhyTraceModal({ entry, onClose }) {
 
           {/* Rule Evaluation Status */}
           <div>
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Guardrail Invariants Evaluated</span>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Guardrail Invariants Evaluated (6/6)</span>
             <div className="mt-1.5 space-y-1">
               <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-100">
                 <span className="text-slate-700 font-medium">1. Closed Project Invariant</span>
@@ -99,6 +99,30 @@ export default function WhyTraceModal({ entry, onClose }) {
               <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-100">
                 <span className="text-slate-700 font-medium">3. Statistical Z-Score Outlier (&gt;10.4h)</span>
                 {entry.anomalies?.some(a => a.rule_id === 'UNUSUAL_HOURS') ? (
+                  <span className="text-amber-600 font-bold flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Flagged</span>
+                ) : (
+                  <span className="text-emerald-600 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Passed</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-100">
+                <span className="text-slate-700 font-medium">4. Weekend & Company Holiday Invariant</span>
+                {entry.anomalies?.some(a => a.rule_id === 'WEEKEND_HOLIDAY') ? (
+                  <span className="text-amber-600 font-bold flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Flagged</span>
+                ) : (
+                  <span className="text-emerald-600 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Passed</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-100">
+                <span className="text-slate-700 font-medium">5. Budget Burn Breach (&gt;90%)</span>
+                {entry.anomalies?.some(a => a.rule_id === 'BUDGET_BURN') ? (
+                  <span className="text-amber-600 font-bold flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Flagged</span>
+                ) : (
+                  <span className="text-emerald-600 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Passed</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-100">
+                <span className="text-slate-700 font-medium">6. Duplicate Entry Invariant</span>
+                {entry.anomalies?.some(a => a.rule_id === 'DUPLICATE') ? (
                   <span className="text-amber-600 font-bold flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Flagged</span>
                 ) : (
                   <span className="text-emerald-600 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Passed</span>
@@ -130,3 +154,4 @@ export default function WhyTraceModal({ entry, onClose }) {
     </div>
   );
 }
+

@@ -32,10 +32,16 @@ def evaluate_anomalies(
     project_status = project.get("status", "active")
     end_date_str = project.get("end_date")
     if project_status == "closed" or (end_date_str and date_str > end_date_str):
+        display_date = "31 Oct"
+        if end_date_str:
+            try:
+                display_date = datetime.strptime(end_date_str, "%Y-%m-%d").strftime("%d %b")
+            except Exception:
+                display_date = end_date_str
         anomalies.append({
             "rule_id": "CLOSED_PROJECT",
             "severity": "error",
-            "message": f"This project closed on {end_date_str or '31 Oct'}. Time cannot be billed.",
+            "message": f"This project closed on {display_date}. Time cannot be billed.",
             "suggested_fix": {
                 "action": "change_project",
                 "value": "INT-OPS"
@@ -123,3 +129,4 @@ def evaluate_anomalies(
             break
 
     return anomalies
+

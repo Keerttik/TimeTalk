@@ -71,9 +71,8 @@ def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, 
     """Deterministic NLP extractor that reliably splits compound sentences and extracts activities."""
     activities = []
     
-    # Split on "and", "also", "then", ";" or ","
-    # E.g. "Spent 3 hours on the Acme design review yesterday and 1 hour on internal standup."
-    raw_clauses = re.split(r"\band\b|\balso\b|\bthen\b|;|,", text, flags=re.IGNORECASE)
+    # Split on "and", "also", "then", ";" or "," when followed by hours/activity
+    raw_clauses = re.split(r"\band\b|\balso\b|\bthen\b|;|\n|,\s*(?=\d+\s*(?:hours?|hrs?|h\b))", text, flags=re.IGNORECASE)
     clauses = [c.strip() for c in raw_clauses if c.strip()]
     
     # Check if a date is mentioned anywhere in the overall prompt
@@ -100,10 +99,18 @@ def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, 
             
         # Determine date for this clause
         clause_date = None
-        if "yesterday" in clause.lower():
+        explicit_date_match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", clause)
+        if explicit_date_match:
+            clause_date = explicit_date_match.group(1)
+        elif "yesterday" in clause.lower():
             clause_date = parse_relative_date("yesterday", ref_date)
         elif "today" in clause.lower():
             clause_date = parse_relative_date("today", ref_date)
+        elif any(d in clause.lower() for d in ["sunday", "saturday", "monday", "tuesday", "wednesday", "thursday", "friday"]):
+            for d in ["sunday", "saturday", "monday", "tuesday", "wednesday", "thursday", "friday"]:
+                if d in clause.lower():
+                    clause_date = parse_relative_date(d, ref_date)
+                    break
         elif overall_date_term:
             clause_date = parse_relative_date(overall_date_term, ref_date)
         else:
@@ -115,6 +122,8 @@ def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, 
             billable_intent = False
         elif "billable" in clause.lower():
             billable_intent = True
+        elif len(clauses) == 1 and "billable" in text.lower():
+            billable_intent = not ("non-billable" in text.lower() or "not billable" in text.lower())
             
         # Hints
         project_hint = ""
@@ -314,3 +323,4 @@ def extract_timesheet_drafts(
     }
     
     return draft_entries, telemetry, requires_clarification, clarification_prompt, clarification_options
+

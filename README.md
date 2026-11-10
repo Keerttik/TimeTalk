@@ -82,3 +82,4 @@ py test_phase1.py
 - [x] Both draft rows appear under yesterday's date (2026-11-09).
 - [x] Clicking "Confirm" commits rows to storage.
 - [x] Zero rows committed prior to confirmation (FR7 preserved).
+
