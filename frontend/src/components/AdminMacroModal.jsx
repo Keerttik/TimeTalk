@@ -1,59 +1,40 @@
-import React, { useState, useEffect } from 'react';
-import { X, BarChart3, ShieldAlert, Clock, CheckCircle2, Download, Briefcase } from 'lucide-react';
-import { formatRoiCap } from './AIValuePanel';
+import React from 'react';
+import { X, BarChart3, Download, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useMetrics, formatRoi } from '../store/metricsStore';
 
-export default function AdminMacroModal({ onClose, liveCostRupees, liveLeakageRupees }) {
-  const [metrics, setMetrics] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+export default function AdminMacroModal({ onClose }) {
+  const { metrics, teamConsultants, hourlyRate } = useMetrics();
 
-  useEffect(() => {
-    fetch('/api/admin/metrics')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        setMetrics(data);
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        console.error('Failed to fetch team metrics:', err);
-        setIsLoading(false);
-      });
-  }, []);
-
-  const confirmedEntriesCount = metrics?.total_entries_confirmed || 0;
-  const effectiveCost =
-    typeof liveCostRupees === 'number' && liveCostRupees > 0
-      ? liveCostRupees
-      : metrics?.estimated_ai_cost_inr || 0;
-  const effectiveLeakage = Math.max(
-    metrics?.leakage_prevented_inr || 0,
-    liveLeakageRupees || 0
-  );
-  const totalValue = (metrics?.value_of_time_saved_inr || 0) + effectiveLeakage;
-  const canShowRoi = confirmedEntriesCount >= 3;
-  const roiRatio = effectiveCost > 0 ? totalValue / effectiveCost : totalValue > 0 ? 1000 : 0;
-  const roiDisplay = formatRoiCap(roiRatio);
+  const flaggedCount = teamConsultants.filter((c) => c.flat8hPattern).length;
 
   const handleExportCSV = () => {
-    if (!metrics) return;
     const rows = [
-      ['Metric', 'Value'],
-      ['Organization', metrics.organization],
-      ['Period', metrics.sample_period],
-      ['Total Conversations', metrics.total_conversations],
-      ['Total Hours Logged', metrics.total_hours_logged],
-      ['Billable Utilization', `${metrics.billable_utilization_pct}%`],
-      ['Edit Rate', `${metrics.edit_rate_pct}%`],
-      ['Billing Value Generated', `INR ${metrics.billing_value_generated_inr}`],
-      ['Time Saved (Minutes)', metrics.time_saved_minutes],
-      ['Value of Time Saved', `INR ${metrics.value_of_time_saved_inr}`],
-      ['Leakage Prevented', `INR ${effectiveLeakage}`],
-      ['AI Cost', `INR ${effectiveCost.toFixed(2)}`],
-      ['Net ROI', canShowRoi ? roiDisplay : 'Pending 3+ entries']
+      ['Section', 'Metric', 'Value'],
+      ['Session KPIs', 'Time Saved (Minutes)', metrics.timeSavedMinutes.toFixed(1)],
+      ['Session KPIs', 'Total Value (INR)', Math.round(metrics.totalValueRupees)],
+      ['Session KPIs', 'Leakage Caught (INR)', Math.round(metrics.leakageCaughtRupees)],
+      ['Session KPIs', 'Tokens', metrics.totalTokens],
+      ['Session KPIs', 'AI Token Cost (INR)', metrics.aiCostRupees.toFixed(2)],
+      ['Session KPIs', 'Fully Loaded Cost (INR)', metrics.fullyLoadedCostRupees.toFixed(2)],
+      ['Session KPIs', 'Token ROI', metrics.canShowRoi ? formatRoi(metrics.tokenRoi) : 'Pending 3+ entries'],
+      ['Session KPIs', 'Fully Loaded ROI', metrics.canShowRoi ? formatRoi(metrics.fullyLoadedRoi) : 'Pending 3+ entries'],
+      ['Session KPIs', 'Client Billable Value Logged (Context, not counted in ROI)', Math.round(metrics.billingValueLoggedRupees)],
+      [],
+      ['Consultant', 'Confirmed Hours', 'Utilization %', 'Edit Rate %', 'Same-Day Logging %', 'Flat 8h Pattern'],
+      ...teamConsultants.map((c) => [
+        c.name,
+        `${c.confirmedHours.toFixed(1)}h`,
+        `${c.utilizationPct}%`,
+        `${c.editRatePct}%`,
+        `${c.sameDayLoggingPct}%`,
+        c.flat8hPattern ? `Flagged (${c.flat8hReason})` : 'Clear'
+      ])
     ];
+
     const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI(csvContent));
-    link.setAttribute('download', 'TimeTalk_Team_Summary.csv');
+    link.setAttribute('download', 'TimeTalk_Team_View.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -61,9 +42,9 @@ export default function AdminMacroModal({ onClose, liveCostRupees, liveLeakageRu
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-      <div className="bg-white rounded-lg border border-slate-200 max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-200 max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-600 text-white rounded-lg">
               <BarChart3 className="w-4 h-4" />
@@ -86,157 +67,226 @@ export default function AdminMacroModal({ onClose, liveCostRupees, liveLeakageRu
 
         {/* Body */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs bg-[#F7F8FA]">
-          {isLoading ? (
-            <div className="py-12 text-center text-slate-500">Loading team metrics...</div>
-          ) : (
-            <>
-              {/* Value, Cost, ROI as Separate Numbers */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                  <span className="text-xs font-medium text-slate-500">Total value</span>
-                  <div className="text-2xl font-bold text-slate-900 mt-1">
-                    ₹{Math.round(totalValue).toLocaleString('en-IN')}
+          {/* Shared-Store KPI Summary (Identical to Main KPI Cards) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-white border border-slate-200 rounded-lg">
+              <span className="text-xs font-medium text-slate-500">Time saved</span>
+              <div className="text-xl font-bold text-slate-900 mt-1">
+                {metrics.timeSavedMinutes.toFixed(1)}{' '}
+                <span className="text-xs font-medium text-slate-500">mins</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Value: <strong className="text-slate-700">₹{Math.round(metrics.valueOfTimeSavedRupees).toLocaleString('en-IN')}</strong>
+              </p>
+            </div>
+
+            <div className="p-4 bg-white border border-slate-200 rounded-lg">
+              <span className="text-xs font-medium text-slate-500">Leakage caught</span>
+              <div className="text-xl font-bold text-slate-900 mt-1">
+                ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Blocked invalid billing
+              </p>
+            </div>
+
+            <div className="p-4 bg-white border border-slate-200 rounded-lg">
+              <span className="text-xs font-medium text-slate-500">AI cost</span>
+              <div className="text-xl font-bold text-slate-900 mt-1">
+                ₹{metrics.aiCostRupees.toFixed(2)}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {metrics.totalTokens.toLocaleString('en-IN')} tokens · Loaded ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
+              </p>
+            </div>
+
+            <div className="p-4 bg-white border border-slate-200 rounded-lg">
+              <span className="text-xs font-medium text-slate-500">ROI</span>
+              {metrics.canShowRoi ? (
+                <>
+                  <div className="flex items-baseline justify-between gap-2 mt-1">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Token ROI</span>
+                      <span className="text-base font-bold text-blue-600">
+                        {formatRoi(metrics.tokenRoi)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-500 block">Fully loaded</span>
+                      <span className="text-base font-bold text-slate-900">
+                        {formatRoi(metrics.fullyLoadedRoi)}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Time saved + leakage caught
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Value ₹{Math.round(metrics.totalValueRupees).toLocaleString('en-IN')}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="text-xl font-bold text-slate-300 mt-1">—</div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Unlocks at 3 entries ({metrics.confirmedCount}/3)
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Consultants Table (7 Consultants, 1-Week Entries, Flat 8h Pattern Flag) */}
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-semibold text-slate-900">
+                  Consultant logging discipline ({teamConsultants.length} consultants · Nov 9 – Nov 13)
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Flat 8h pattern flags identical daily hours, &gt;90% on one project, and 5+ days late logging
+                </p>
+              </div>
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                {flaggedCount} flagged
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-[#F7F8FA] border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-4">Consultant</th>
+                    <th className="py-2.5 px-3 text-right">Confirmed hours</th>
+                    <th className="py-2.5 px-3 text-right">Utilization</th>
+                    <th className="py-2.5 px-3 text-right">Edit rate</th>
+                    <th className="py-2.5 px-3 text-right">Same-day logging %</th>
+                    <th className="py-2.5 px-4">Flat 8h pattern</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {teamConsultants.map((c) => (
+                    <tr
+                      key={c.id}
+                      className={
+                        c.flat8hPattern
+                          ? 'bg-amber-50/35'
+                          : c.isLiveUser
+                          ? 'bg-blue-50/30'
+                          : 'bg-white hover:bg-[#F7F8FA]'
+                      }
+                    >
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-900">{c.name}</span>
+                          {c.isLiveUser && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                              Live
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-500">{c.role}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-semibold text-slate-900">
+                        {c.confirmedHours.toFixed(1)}h
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-700">
+                        {c.utilizationPct.toFixed(1)}%
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-700">
+                        {c.editRatePct.toFixed(1)}%
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-medium text-slate-800">
+                        {c.sameDayLoggingPct}%
+                      </td>
+                      <td className="py-2.5 px-4">
+                        {c.flat8hPattern ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 self-start text-[11px] font-medium px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200">
+                              <AlertTriangle className="w-3 h-3 text-amber-700" />
+                              Flagged
+                            </span>
+                            <span className="text-[10px] text-amber-800">{c.flat8hReason}</span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                            <CheckCircle2 className="w-3 h-3 text-slate-400" />
+                            Clear
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Value Breakdown */}
+          <div className="border border-slate-200 rounded-lg p-4 bg-white space-y-2">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <h4 className="font-semibold text-slate-900 text-xs">Value breakdown</h4>
+              <span className="text-[11px] text-slate-500">
+                Loaded rate: ₹{hourlyRate.toLocaleString('en-IN')}/hr
+              </span>
+            </div>
+
+            <div className="divide-y divide-slate-100 text-slate-700">
+              <div className="py-2 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-900">Client billable value logged</span>
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-[#F7F8FA] text-slate-600 border border-slate-200">
+                      Context, not counted in ROI
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Confirmed billable project hours in this session
                   </p>
                 </div>
+                <span className="font-semibold text-slate-900">
+                  ₹{Math.round(metrics.billingValueLoggedRupees).toLocaleString('en-IN')}
+                </span>
+              </div>
 
-                <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                  <span className="text-xs font-medium text-slate-500">AI cost</span>
-                  <div className="text-2xl font-bold text-slate-900 mt-1">
-                    ₹{effectiveCost.toFixed(2)}
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Per-token model compute
+              <div className="py-2 flex items-center justify-between">
+                <div>
+                  <span className="font-medium text-slate-900">Value of time saved</span>
+                  <p className="text-[11px] text-slate-500">
+                    {metrics.timeSavedMinutes.toFixed(1)} mins saved vs manual entry
                   </p>
                 </div>
+                <span className="font-semibold text-slate-900">
+                  ₹{Math.round(metrics.valueOfTimeSavedRupees).toLocaleString('en-IN')}
+                </span>
+              </div>
 
-                <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                  <span className="text-xs font-medium text-slate-500">Net ROI</span>
-                  <div className={`text-2xl font-bold mt-1 ${canShowRoi ? 'text-blue-600' : 'text-slate-300'}`}>
-                    {canShowRoi ? roiDisplay : '—'}
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    {canShowRoi ? 'Capped at 1,000x+' : `Unlocks at 3 entries (${confirmedEntriesCount}/3)`}
+              <div className="py-2 flex items-center justify-between">
+                <div>
+                  <span className="font-medium text-slate-900">Disputed invoice leakage blocked</span>
+                  <p className="text-[11px] text-slate-500">
+                    Invalid billing caught before submission
                   </p>
                 </div>
+                <span className="font-semibold text-slate-900">
+                  ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
+                </span>
               </div>
 
-              {/* 4 Core KPI Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                  <div className="flex items-center gap-1.5 text-slate-500 font-medium text-xs">
-                    <Clock className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Confirmed hours</span>
-                  </div>
-                  <div className="text-lg font-bold text-slate-900 mt-1">
-                    {metrics?.total_hours_logged || 0}h
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    {confirmedEntriesCount} confirmed entries
-                  </span>
+              <div className="py-2 flex items-center justify-between">
+                <div>
+                  <span className="font-medium text-slate-900">AI token cost / Fully loaded cost</span>
+                  <p className="text-[11px] text-slate-500">
+                    {metrics.totalTokens.toLocaleString('en-IN')} tokens + ₹{metrics.fullyLoadedMonthlyCost}/user/mo platform &amp; infra
+                  </p>
                 </div>
-
-                <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                  <div className="flex items-center gap-1.5 text-slate-500 font-medium text-xs">
-                    <Briefcase className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Utilization</span>
-                  </div>
-                  <div className="text-lg font-bold text-slate-900 mt-1">
-                    {metrics?.billable_utilization_pct || 0}%
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    {metrics?.billable_hours || 0}h billable / {metrics?.non_billable_hours || 0}h internal
-                  </span>
-                </div>
-
-                <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                  <div className="flex items-center gap-1.5 text-slate-500 font-medium text-xs">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Edit rate</span>
-                  </div>
-                  <div className="text-lg font-bold text-slate-900 mt-1">
-                    {metrics?.edit_rate_pct || 0}%
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    Target &lt; 15%
-                  </span>
-                </div>
-
-                <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                  <div className="flex items-center gap-1.5 text-slate-500 font-medium text-xs">
-                    <ShieldAlert className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Leakage caught</span>
-                  </div>
-                  <div className="text-lg font-bold text-slate-900 mt-1">
-                    ₹{Math.round(effectiveLeakage).toLocaleString('en-IN')}
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    Closed project blocks
-                  </span>
-                </div>
+                <span className="font-semibold text-slate-900">
+                  ₹{metrics.aiCostRupees.toFixed(2)} / ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
+                </span>
               </div>
-
-              {/* Economic Breakdown */}
-              <div className="border border-slate-200 rounded-lg p-4 bg-white space-y-2">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <h4 className="font-semibold text-slate-900 text-xs">Value breakdown</h4>
-                  <span className="text-[11px] text-slate-500">Loaded rate: ₹1,500/hr</span>
-                </div>
-
-                <div className="divide-y divide-slate-100 text-slate-700">
-                  <div className="py-2 flex items-center justify-between">
-                    <div>
-                      <span className="font-medium text-slate-900">Client billable value logged</span>
-                      <p className="text-[11px] text-slate-500">Confirmed billable project hours</p>
-                    </div>
-                    <span className="font-semibold text-slate-900">
-                      ₹{(metrics?.billing_value_generated_inr || 0).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-
-                  <div className="py-2 flex items-center justify-between">
-                    <div>
-                      <span className="font-medium text-slate-900">Value of time saved</span>
-                      <p className="text-[11px] text-slate-500">
-                        {metrics?.time_saved_minutes || 0} mins saved vs manual entry
-                      </p>
-                    </div>
-                    <span className="font-semibold text-slate-900">
-                      ₹{(metrics?.value_of_time_saved_inr || 0).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-
-                  <div className="py-2 flex items-center justify-between">
-                    <div>
-                      <span className="font-medium text-slate-900">Disputed invoice leakage blocked</span>
-                      <p className="text-[11px] text-slate-500">
-                        Invalid billing caught before submission
-                      </p>
-                    </div>
-                    <span className="font-semibold text-slate-900">
-                      ₹{Math.round(effectiveLeakage).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-
-                  <div className="py-2 flex items-center justify-between">
-                    <div>
-                      <span className="font-medium text-slate-900">AI compute cost</span>
-                      <p className="text-[11px] text-slate-500">Computed from per-token model pricing</p>
-                    </div>
-                    <span className="font-semibold text-slate-900">
-                      ₹{effectiveCost.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-white border-t border-slate-200 flex items-center justify-between">
+        <div className="px-6 py-3.5 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={handleExportCSV}

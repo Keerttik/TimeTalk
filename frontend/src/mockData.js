@@ -95,3 +95,85 @@ export const QUICK_PROMPTS = [
   }
 ];
 
+// 6 peer consultants seeded with a full Mon-Fri week of entries (plus Priya live = 7 total)
+export const TEAM_CONSULTANTS_SEED = [
+  {
+    id: "u_arjun",
+    name: "Arjun Mehta",
+    role: "Principal Consultant",
+    entries: [
+      { date: "2026-11-09", project_code: "ACME-WEB", hours: 6.5, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-09", project_code: "INT-OPS", hours: 1.0, is_billable: false, user_edited: false, days_late: 0 },
+      { date: "2026-11-10", project_code: "ACME-WEB", hours: 8.5, is_billable: true, user_edited: true, days_late: 0 },
+      { date: "2026-11-11", project_code: "GLOBEX-DATA", hours: 9.0, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-12", project_code: "ACME-MOB", hours: 7.0, is_billable: true, user_edited: false, days_late: 1 },
+      { date: "2026-11-13", project_code: "ACME-WEB", hours: 6.0, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-13", project_code: "INT-OPS", hours: 2.0, is_billable: false, user_edited: false, days_late: 0 }
+    ]
+  },
+  {
+    id: "u_rohan",
+    name: "Rohan Kulkarni",
+    role: "Senior Consultant",
+    entries: [
+      { date: "2026-11-09", project_code: "GLOBEX-DATA", hours: 8.0, is_billable: true, user_edited: false, days_late: 6 },
+      { date: "2026-11-10", project_code: "GLOBEX-DATA", hours: 8.0, is_billable: true, user_edited: false, days_late: 6 },
+      { date: "2026-11-11", project_code: "GLOBEX-DATA", hours: 8.0, is_billable: true, user_edited: false, days_late: 6 },
+      { date: "2026-11-12", project_code: "GLOBEX-DATA", hours: 8.0, is_billable: true, user_edited: false, days_late: 6 },
+      { date: "2026-11-13", project_code: "GLOBEX-DATA", hours: 8.0, is_billable: true, user_edited: false, days_late: 6 }
+    ]
+  },
+  {
+    id: "u_ananya",
+    name: "Ananya Iyer",
+    role: "Consultant",
+    entries: [
+      { date: "2026-11-09", project_code: "ACME-MOB", hours: 6.5, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-10", project_code: "ACME-MOB", hours: 7.5, is_billable: true, user_edited: true, days_late: 0 },
+      { date: "2026-11-10", project_code: "INT-OPS", hours: 1.5, is_billable: false, user_edited: false, days_late: 0 },
+      { date: "2026-11-11", project_code: "ACME-WEB", hours: 8.0, is_billable: true, user_edited: false, days_late: 1 },
+      { date: "2026-11-12", project_code: "ACME-MOB", hours: 7.5, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-13", project_code: "INT-OPS", hours: 6.0, is_billable: false, user_edited: false, days_late: 0 }
+    ]
+  },
+  {
+    id: "u_vikram",
+    name: "Vikram Nair",
+    role: "Delivery Lead",
+    entries: [
+      { date: "2026-11-09", project_code: "ACME-WEB", hours: 8.0, is_billable: true, user_edited: false, days_late: 7 },
+      { date: "2026-11-10", project_code: "ACME-WEB", hours: 8.0, is_billable: true, user_edited: false, days_late: 7 },
+      { date: "2026-11-11", project_code: "ACME-WEB", hours: 8.0, is_billable: true, user_edited: false, days_late: 7 },
+      { date: "2026-11-12", project_code: "ACME-WEB", hours: 8.0, is_billable: true, user_edited: false, days_late: 7 },
+      { date: "2026-11-13", project_code: "ACME-WEB", hours: 6.0, is_billable: true, user_edited: true, days_late: 7 },
+      { date: "2026-11-13", project_code: "INT-OPS", hours: 2.0, is_billable: false, user_edited: false, days_late: 7 }
+    ]
+  },
+  {
+    id: "u_meera",
+    name: "Meera Deshmukh",
+    role: "Associate Consultant",
+    entries: [
+      { date: "2026-11-09", project_code: "GLOBEX-DATA", hours: 7.0, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-10", project_code: "GLOBEX-DATA", hours: 6.5, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-10", project_code: "INT-OPS", hours: 1.5, is_billable: false, user_edited: false, days_late: 0 },
+      { date: "2026-11-11", project_code: "ACME-MOB", hours: 8.5, is_billable: true, user_edited: true, days_late: 0 },
+      { date: "2026-11-12", project_code: "GLOBEX-DATA", hours: 8.0, is_billable: true, user_edited: false, days_late: 1 },
+      { date: "2026-11-13", project_code: "ACME-MOB", hours: 5.5, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-13", project_code: "INT-OPS", hours: 2.0, is_billable: false, user_edited: false, days_late: 0 }
+    ]
+  },
+  {
+    id: "u_kabir",
+    name: "Kabir Verma",
+    role: "Consultant",
+    entries: [
+      { date: "2026-11-09", project_code: "ACME-MOB", hours: 8.0, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-10", project_code: "ACME-MOB", hours: 8.0, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-11", project_code: "ACME-MOB", hours: 8.0, is_billable: true, user_edited: false, days_late: 0 },
+      { date: "2026-11-12", project_code: "ACME-MOB", hours: 8.0, is_billable: true, user_edited: false, days_late: 1 },
+      { date: "2026-11-13", project_code: "ACME-MOB", hours: 8.0, is_billable: true, user_edited: false, days_late: 0 }
+    ]
+  }
+];
+

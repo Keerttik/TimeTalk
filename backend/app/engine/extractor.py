@@ -327,9 +327,16 @@ def call_gemini_api(
             parsed = json.loads(text_content)
             if validate_activities_payload(parsed):
                 meta = data.get("usageMetadata", {})
+                in_tok = int(meta.get("promptTokenCount") or 0)
+                out_tok = int(meta.get("candidatesTokenCount") or 0)
+                total_tok = int(meta.get("totalTokenCount") or 0)
+                if out_tok <= 0 and total_tok > in_tok:
+                    out_tok = total_tok - in_tok
+                if out_tok <= 0:
+                    out_tok = int(meta.get("thoughtsTokenCount") or 0)
                 usage = {
-                    "input_tokens": int(meta.get("promptTokenCount", 0)),
-                    "output_tokens": int(meta.get("candidatesTokenCount", 0)),
+                    "input_tokens": in_tok,
+                    "output_tokens": out_tok,
                 }
                 return parsed, usage
 
@@ -482,12 +489,14 @@ def extract_timesheet_drafts(
         entry_counter += 1
 
     latency_total_ms = max(int((time.time() - start_time) * 1000), 120)
+    est_input = len(user_message.split()) * 6 + 240
+    est_output = len(draft_entries) * 65 + 40
     if llm_usage and (llm_usage.get("input_tokens") or llm_usage.get("output_tokens")):
-        input_tokens = llm_usage["input_tokens"]
-        output_tokens = llm_usage["output_tokens"]
+        input_tokens = int(llm_usage.get("input_tokens") or 0) or est_input
+        output_tokens = int(llm_usage.get("output_tokens") or 0) or est_output
     else:
-        input_tokens = len(user_message.split()) * 6 + 240
-        output_tokens = len(draft_entries) * 65 + 40
+        input_tokens = est_input
+        output_tokens = est_output
 
     telemetry = {
         "model": model_name,

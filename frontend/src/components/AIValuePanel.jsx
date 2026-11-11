@@ -1,70 +1,15 @@
 import React, { useState } from 'react';
 import { Clock, ShieldCheck, Cpu, TrendingUp, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
+import { useMetrics, formatRoi } from '../store/metricsStore';
 
-// Real per-1M-token model pricing in INR (USD * 85)
-export const MODEL_PRICING_INR_PER_1M = {
-  'openai/gpt-oss-20b': { input: 6.38, output: 25.5, label: 'GPT-OSS 20B (Groq)' },
-  'openai/gpt-oss-120b': { input: 12.75, output: 51.0, label: 'GPT-OSS 120B (Groq)' },
-  'llama-3.3-70b-versatile': { input: 50.15, output: 67.15, label: 'LLaMA 3.3 70B (Groq)' },
-  'gemini-2.5-flash': { input: 25.5, output: 212.5, label: 'Gemini 2.5 Flash' },
-  'localllm-hybrid-v1': { input: 0, output: 0, label: 'Local Rules Fallback' }
-};
-
-const DEFAULT_PRICING = { input: 10.0, output: 40.0, label: 'Standard Model' };
-
-export function calculateAiCostInr(telemetryHistory = []) {
-  return telemetryHistory.reduce((sum, t) => {
-    const pricing = MODEL_PRICING_INR_PER_1M[t.model] || DEFAULT_PRICING;
-    const inCost = ((t.input_tokens || 0) / 1_000_000) * pricing.input;
-    const outCost = ((t.output_tokens || 0) / 1_000_000) * pricing.output;
-    return sum + inCost + outCost;
-  }, 0);
-}
-
-export function formatRoiCap(rawRoi) {
-  if (!Number.isFinite(rawRoi) || rawRoi <= 0) return '0x';
-  if (rawRoi >= 1000) return '1,000x+';
-  return `${Math.round(rawRoi).toLocaleString('en-IN')}x`;
-}
-
-export default function AIValuePanel({
-  telemetryHistory = [],
-  confirmedCount = 0,
-  leakageCaughtRupees = 0,
-  chatSeconds = 25,
-  hourlyRate = 1500
-}) {
+export default function AIValuePanel() {
+  const {
+    metrics,
+    hourlyRate,
+    fullyLoadedMonthlyCost,
+    setFullyLoadedMonthlyCost
+  } = useMetrics();
   const [showAssumptions, setShowAssumptions] = useState(false);
-
-  const MANUAL_BASELINE_MINUTES_PER_ENTRY = 2.0;
-
-  const totalTokens = telemetryHistory.reduce(
-    (sum, t) => sum + (t.input_tokens || 0) + (t.output_tokens || 0),
-    0
-  );
-
-  // Real per-token model cost in INR
-  const aiCostRupees = calculateAiCostInr(telemetryHistory);
-
-  // Time Saved & Value
-  const manualMinutes = confirmedCount * MANUAL_BASELINE_MINUTES_PER_ENTRY;
-  const chatMinutes = chatSeconds / 60;
-  const timeSavedMinutes = Math.max(
-    0,
-    Math.round((manualMinutes - (confirmedCount > 0 ? chatMinutes : 0)) * 10) / 10
-  );
-  const valueOfTimeSavedRupees = (timeSavedMinutes / 60) * hourlyRate;
-
-  // Total Value vs Cost & ROI
-  const totalValueRupees = valueOfTimeSavedRupees + leakageCaughtRupees;
-  const canShowRoi = confirmedCount >= 3;
-  const rawRoi = aiCostRupees > 0 ? totalValueRupees / aiCostRupees : totalValueRupees > 0 ? 1000 : 0;
-  const roiDisplay = formatRoiCap(rawRoi);
-
-  const activeModel =
-    telemetryHistory.length > 0
-      ? telemetryHistory[telemetryHistory.length - 1].model
-      : 'openai/gpt-oss-20b';
 
   return (
     <div className="shrink-0 flex flex-col gap-2">
@@ -86,10 +31,27 @@ export default function AIValuePanel({
       {/* Expandable Assumptions Drawer */}
       {showAssumptions && (
         <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-3">
-          <div className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2.5 py-1 rounded-lg text-slate-800">
-            ROI = (Value of time saved + Leakage caught) / AI cost
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2 py-1 rounded-lg text-slate-800">
+              Token ROI = Value / Token cost
+            </span>
+            <span className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2 py-1 rounded-lg text-slate-800">
+              Fully loaded ROI = Value / (Token cost + Fully loaded cost)
+            </span>
           </div>
+
           <div className="flex flex-wrap items-center gap-4 text-[11px]">
+            <label className="flex items-center gap-1.5 text-slate-600">
+              <span>Fully loaded cost (₹/user/mo):</span>
+              <input
+                type="number"
+                min="0"
+                step="5"
+                value={fullyLoadedMonthlyCost}
+                onChange={(e) => setFullyLoadedMonthlyCost(Math.max(0, Number(e.target.value) || 0))}
+                className="w-16 px-2 py-0.5 bg-[#F7F8FA] border border-slate-200 rounded-lg text-slate-900 font-semibold text-center focus:outline-hidden focus:border-blue-600"
+              />
+            </label>
             <span>
               Rate: <strong className="text-slate-900">₹{hourlyRate.toLocaleString('en-IN')}/hr</strong>
             </span>
@@ -97,7 +59,7 @@ export default function AIValuePanel({
               Baseline: <strong className="text-slate-900">2.0 min/entry</strong>
             </span>
             <span>
-              Model: <strong className="text-slate-900">{activeModel}</strong>
+              Model: <strong className="text-slate-900">{metrics.activeModel}</strong>
             </span>
           </div>
         </div>
@@ -113,10 +75,14 @@ export default function AIValuePanel({
           </div>
           <div className="mt-2">
             <div className="text-xl font-bold text-slate-900 tracking-tight">
-              {timeSavedMinutes.toFixed(1)} <span className="text-xs font-medium text-slate-500">mins</span>
+              {metrics.timeSavedMinutes.toFixed(1)}{' '}
+              <span className="text-xs font-medium text-slate-500">mins</span>
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              Value: <span className="font-semibold text-slate-700">₹{Math.round(valueOfTimeSavedRupees).toLocaleString('en-IN')}</span>
+              Value:{' '}
+              <span className="font-semibold text-slate-700">
+                ₹{Math.round(metrics.valueOfTimeSavedRupees).toLocaleString('en-IN')}
+              </span>
             </div>
           </div>
         </div>
@@ -129,7 +95,7 @@ export default function AIValuePanel({
           </div>
           <div className="mt-2">
             <div className="text-xl font-bold text-slate-900 tracking-tight">
-              ₹{Math.round(leakageCaughtRupees).toLocaleString('en-IN')}
+              ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
               Blocked invalid billing
@@ -145,35 +111,46 @@ export default function AIValuePanel({
           </div>
           <div className="mt-2">
             <div className="text-xl font-bold text-slate-900 tracking-tight">
-              ₹{aiCostRupees.toFixed(2)}
+              ₹{metrics.aiCostRupees.toFixed(2)}
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              {totalTokens.toLocaleString('en-IN')} tokens used
+              {metrics.totalTokens.toLocaleString('en-IN')} tokens
             </div>
           </div>
         </div>
 
-        {/* 4. ROI (Hidden until 3+ confirmed entries, capped at 1,000x+, separate Value/Cost/ROI) */}
+        {/* 4. ROI (Token ROI & Fully loaded ROI, uncapped, hidden until 3+ confirmed) */}
         <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>ROI</span>
             <TrendingUp className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="mt-2">
-            {canShowRoi ? (
+          <div className="mt-1.5">
+            {metrics.canShowRoi ? (
               <>
-                <div className="text-xl font-bold text-blue-600 tracking-tight">
-                  {roiDisplay}
+                <div className="flex items-baseline justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Token ROI</span>
+                    <span className="text-base font-bold text-blue-600 tracking-tight">
+                      {formatRoi(metrics.tokenRoi)}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-500 block">Fully loaded</span>
+                    <span className="text-base font-bold text-slate-900 tracking-tight">
+                      {formatRoi(metrics.fullyLoadedRoi)}
+                    </span>
+                  </div>
                 </div>
-                <div className="text-[11px] text-slate-500 mt-0.5 truncate">
-                  Value ₹{Math.round(totalValueRupees).toLocaleString('en-IN')} · Cost ₹{aiCostRupees.toFixed(2)}
+                <div className="text-[11px] text-slate-500 mt-1 truncate">
+                  Value ₹{Math.round(metrics.totalValueRupees).toLocaleString('en-IN')} · Loaded ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
                 </div>
               </>
             ) : (
               <>
                 <div className="text-xl font-bold text-slate-300 tracking-tight">—</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
-                  Unlocks at 3 entries ({confirmedCount}/3)
+                  Unlocks at 3 entries ({metrics.confirmedCount}/3)
                 </div>
               </>
             )}
