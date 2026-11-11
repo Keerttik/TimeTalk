@@ -1,149 +1,182 @@
 import React, { useState } from 'react';
-import { DollarSign, Clock, ShieldCheck, TrendingUp, Info, ChevronDown, ChevronUp, Cpu, Calculator, CheckCircle2 } from 'lucide-react';
+import { Clock, ShieldCheck, Cpu, TrendingUp, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
+
+// Real per-1M-token model pricing in INR (USD * 85)
+export const MODEL_PRICING_INR_PER_1M = {
+  'openai/gpt-oss-20b': { input: 6.38, output: 25.5, label: 'GPT-OSS 20B (Groq)' },
+  'openai/gpt-oss-120b': { input: 12.75, output: 51.0, label: 'GPT-OSS 120B (Groq)' },
+  'llama-3.3-70b-versatile': { input: 50.15, output: 67.15, label: 'LLaMA 3.3 70B (Groq)' },
+  'gemini-2.5-flash': { input: 25.5, output: 212.5, label: 'Gemini 2.5 Flash' },
+  'localllm-hybrid-v1': { input: 0, output: 0, label: 'Local Rules Fallback' }
+};
+
+const DEFAULT_PRICING = { input: 10.0, output: 40.0, label: 'Standard Model' };
+
+export function calculateAiCostInr(telemetryHistory = []) {
+  return telemetryHistory.reduce((sum, t) => {
+    const pricing = MODEL_PRICING_INR_PER_1M[t.model] || DEFAULT_PRICING;
+    const inCost = ((t.input_tokens || 0) / 1_000_000) * pricing.input;
+    const outCost = ((t.output_tokens || 0) / 1_000_000) * pricing.output;
+    return sum + inCost + outCost;
+  }, 0);
+}
+
+export function formatRoiCap(rawRoi) {
+  if (!Number.isFinite(rawRoi) || rawRoi <= 0) return '0x';
+  if (rawRoi >= 1000) return '1,000x+';
+  return `${Math.round(rawRoi).toLocaleString('en-IN')}x`;
+}
 
 export default function AIValuePanel({
   telemetryHistory = [],
   confirmedCount = 0,
   leakageCaughtRupees = 0,
-  chatSeconds = 25
+  chatSeconds = 25,
+  hourlyRate = 1500
 }) {
   const [showAssumptions, setShowAssumptions] = useState(false);
 
-  // Enterprise baseline parameters (PRD Section 5)
-  const LOADED_HOURLY_COST = 1500; // INR/hr
-  const MANUAL_BASELINE_MINUTES_PER_ENTRY = 2.0; // 2 mins per manual entry
-  const GEMINI_COST_PER_MILLION_TOKENS_INR = 8.0; // ₹8 per 1M tokens
+  const MANUAL_BASELINE_MINUTES_PER_ENTRY = 2.0;
 
-  // Total tokens
   const totalTokens = telemetryHistory.reduce(
     (sum, t) => sum + (t.input_tokens || 0) + (t.output_tokens || 0),
     0
   );
 
-  // AI Cost in INR
-  const aiCostRupees = (totalTokens / 1_000_000) * GEMINI_COST_PER_MILLION_TOKENS_INR;
-  const aiCostPaise = Math.round(aiCostRupees * 100);
+  // Real per-token model cost in INR
+  const aiCostRupees = calculateAiCostInr(telemetryHistory);
 
-  // Time Saved calculation
+  // Time Saved & Value
   const manualMinutes = confirmedCount * MANUAL_BASELINE_MINUTES_PER_ENTRY;
   const chatMinutes = chatSeconds / 60;
-  const timeSavedMinutes = Math.max(0, Math.round((manualMinutes - (confirmedCount > 0 ? chatMinutes : 0)) * 10) / 10);
+  const timeSavedMinutes = Math.max(
+    0,
+    Math.round((manualMinutes - (confirmedCount > 0 ? chatMinutes : 0)) * 10) / 10
+  );
+  const valueOfTimeSavedRupees = (timeSavedMinutes / 60) * hourlyRate;
 
-  // Value of Time Saved
-  const valueOfTimeSavedRupees = (timeSavedMinutes / 60) * LOADED_HOURLY_COST;
-
-  // Total Economic Value & ROI
+  // Total Value vs Cost & ROI
   const totalValueRupees = valueOfTimeSavedRupees + leakageCaughtRupees;
-  const effectiveCost = Math.max(aiCostRupees, 0.005);
-  const liveROI = Math.round(totalValueRupees / effectiveCost);
+  const canShowRoi = confirmedCount >= 3;
+  const rawRoi = aiCostRupees > 0 ? totalValueRupees / aiCostRupees : totalValueRupees > 0 ? 1000 : 0;
+  const roiDisplay = formatRoiCap(rawRoi);
+
+  const activeModel =
+    telemetryHistory.length > 0
+      ? telemetryHistory[telemetryHistory.length - 1].model
+      : 'openai/gpt-oss-20b';
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
-      {/* Header */}
-      <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-indigo-600 text-white flex items-center justify-center">
-            <TrendingUp className="w-3.5 h-3.5" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-800">Live AI Value & ROI Panel</h3>
-            <span className="text-[10px] text-slate-500">Real-Time Economic Telemetry (FR8)</span>
-          </div>
-        </div>
+    <div className="shrink-0 flex flex-col gap-2">
+      {/* Section Subtitle + Assumptions Toggle */}
+      <div className="flex items-center justify-between px-0.5">
+        <span className="text-xs font-medium text-slate-500">Cost vs value, live</span>
 
         <button
-          onClick={() => setShowAssumptions(!showAssumptions)}
-          className="text-[10px] text-slate-500 hover:text-indigo-600 flex items-center gap-0.5 font-medium cursor-pointer"
+          type="button"
+          onClick={() => setShowAssumptions((prev) => !prev)}
+          className="text-xs text-slate-500 hover:text-blue-600 flex items-center gap-1 font-medium cursor-pointer transition"
         >
-          <Calculator className="w-3 h-3" />
-          <span>Assumptions & Formula</span>
-          {showAssumptions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          <Calculator className="w-3.5 h-3.5" />
+          <span>Assumptions</span>
+          {showAssumptions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
       </div>
 
-      {/* Assumptions & Formula Drawer */}
+      {/* Expandable Assumptions Drawer */}
       {showAssumptions && (
-        <div className="px-4 py-3 bg-indigo-50/60 border-b border-indigo-100 text-[11px] text-slate-700 space-y-2">
-          <div className="flex items-center justify-between font-semibold text-indigo-900 border-b border-indigo-200/60 pb-1">
-            <span>ROI Mathematical Formulation:</span>
-            <span className="text-[10px] font-normal text-indigo-700">KaTeX / PRD Spec</span>
+        <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-3">
+          <div className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2.5 py-1 rounded-lg text-slate-800">
+            ROI = (Value of time saved + Leakage caught) / AI cost
           </div>
-
-          {/* Mathematical Equation Display */}
-          <div className="p-2 bg-white rounded-lg border border-indigo-200 font-mono text-[11px] text-indigo-950 text-center shadow-2xs">
-            ROI = (Value of Time Saved + Billing Leakage Caught) / AI Cost
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600">
-            <div>• Loaded Cost: <strong>₹1,500/hr</strong></div>
-            <div>• Manual Baseline: <strong>2.0 min/entry</strong></div>
-            <div>• Inference Model: <strong>Gemini 2.5 Flash</strong></div>
-            <div>• Model Pricing: <strong>₹8 / 1M tokens</strong></div>
+          <div className="flex flex-wrap items-center gap-4 text-[11px]">
+            <span>
+              Rate: <strong className="text-slate-900">₹{hourlyRate.toLocaleString('en-IN')}/hr</strong>
+            </span>
+            <span>
+              Baseline: <strong className="text-slate-900">2.0 min/entry</strong>
+            </span>
+            <span>
+              Model: <strong className="text-slate-900">{activeModel}</strong>
+            </span>
           </div>
         </div>
       )}
 
-      {/* Key Metric Tiles */}
-      <div className="p-4 grid grid-cols-2 gap-3">
-        {/* Live ROI Tile */}
-        <div className="col-span-2 p-3.5 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-xl text-white shadow-sm flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-200">Live Session ROI</span>
-              {liveROI >= 10 && (
-                <span className="text-[9px] font-extrabold uppercase bg-emerald-400 text-slate-900 px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
-                  <CheckCircle2 className="w-2.5 h-2.5" /> &gt;10x Target Met
-                </span>
-              )}
+      {/* Strip of 4 KPI Cards */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* 1. Time saved */}
+        <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>Time saved</span>
+            <Clock className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="mt-2">
+            <div className="text-xl font-bold text-slate-900 tracking-tight">
+              {timeSavedMinutes.toFixed(1)} <span className="text-xs font-medium text-slate-500">mins</span>
             </div>
-            <div className="text-3xl font-black mt-0.5 tracking-tight">
-              {liveROI > 0 ? `${liveROI}x` : '0x'}
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Value: <span className="font-semibold text-slate-700">₹{Math.round(valueOfTimeSavedRupees).toLocaleString('en-IN')}</span>
             </div>
-            <span className="text-[10px] text-indigo-200 block mt-0.5">
-              ₹{Math.round(totalValueRupees).toLocaleString('en-IN')} economic value vs ₹{aiCostRupees.toFixed(3)} cost
-            </span>
-          </div>
-          <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-            <TrendingUp className="w-6 h-6 text-indigo-100" />
           </div>
         </div>
 
-        {/* Time Saved */}
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-          <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-medium">
-            <Clock className="w-3.5 h-3.5 text-blue-600" />
-            <span>Time Saved</span>
+        {/* 2. Leakage caught */}
+        <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>Leakage caught</span>
+            <ShieldCheck className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-base font-bold text-slate-900 mt-1">
-            {timeSavedMinutes} <span className="text-xs font-normal text-slate-500">mins</span>
-          </div>
-          <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-            +₹{Math.round(valueOfTimeSavedRupees).toLocaleString('en-IN')} capacity
-          </div>
-        </div>
-
-        {/* Leakage Caught */}
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-          <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-medium">
-            <ShieldCheck className="w-3.5 h-3.5 text-rose-600" />
-            <span>Leakage Saved</span>
-          </div>
-          <div className="text-base font-bold text-slate-900 mt-1">
-            ₹{leakageCaughtRupees.toLocaleString('en-IN')}
-          </div>
-          <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-            Disputed invoices blocked
+          <div className="mt-2">
+            <div className="text-xl font-bold text-slate-900 tracking-tight">
+              ₹{Math.round(leakageCaughtRupees).toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Blocked invalid billing
+            </div>
           </div>
         </div>
 
-        {/* Tokens & Inference Cost */}
-        <div className="col-span-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-          <div className="flex items-center gap-1">
-            <Cpu className="w-3.5 h-3.5 text-slate-400" />
-            <span>Tokens: <strong className="text-slate-700">{totalTokens}</strong></span>
+        {/* 3. AI cost */}
+        <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>AI cost</span>
+            <Cpu className="w-4 h-4 text-blue-600" />
           </div>
-          <div>
-            AI Cost: <strong className="text-slate-800">₹{aiCostRupees.toFixed(4)}</strong> ({aiCostPaise} paise)
+          <div className="mt-2">
+            <div className="text-xl font-bold text-slate-900 tracking-tight">
+              ₹{aiCostRupees.toFixed(2)}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              {totalTokens.toLocaleString('en-IN')} tokens used
+            </div>
+          </div>
+        </div>
+
+        {/* 4. ROI (Hidden until 3+ confirmed entries, capped at 1,000x+, separate Value/Cost/ROI) */}
+        <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>ROI</span>
+            <TrendingUp className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="mt-2">
+            {canShowRoi ? (
+              <>
+                <div className="text-xl font-bold text-blue-600 tracking-tight">
+                  {roiDisplay}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                  Value ₹{Math.round(totalValueRupees).toLocaleString('en-IN')} · Cost ₹{aiCostRupees.toFixed(2)}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xl font-bold text-slate-300 tracking-tight">—</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  Unlocks at 3 entries ({confirmedCount}/3)
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

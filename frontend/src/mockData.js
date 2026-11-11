@@ -74,19 +74,24 @@ export const MOCK_CATALOGUE = {
 
 export const QUICK_PROMPTS = [
   {
-    id: "step1",
-    tag: "Speed Test",
+    id: "log_yesterday",
+    label: "Log yesterday",
     text: "Spent 3 hours on the Acme design review yesterday and 1 hour on internal standup."
   },
   {
-    id: "step2",
-    tag: "Ambiguity Test",
+    id: "ambiguous_project",
+    label: "Ambiguous project",
     text: "2 hours on Acme development."
   },
   {
-    id: "step3",
-    tag: "Closed Project Test",
+    id: "closed_project",
+    label: "Closed project",
     text: "4 hours on Initech fieldwork today, billable."
+  },
+  {
+    id: "flat_8h_week",
+    label: "Flat 8h week",
+    text: "8 hours a day on Globex data migration from Monday to Friday."
   }
 ];
 

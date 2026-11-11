@@ -31,6 +31,8 @@ RULES:
 4. Resolve relative dates accurately against the reference date:
    - If reference is Tuesday 2026-11-10, "yesterday" is 2026-11-09 (Monday).
    - "today" is 2026-11-10.
+   - In compound sentences (e.g. "3 hours on Acme yesterday and 1 hour on standup"), any clause without its own date inherits the sentence's date (e.g. 2026-11-09).
+   - For weekday ranges (e.g. "Monday to Friday"), emit one activity per weekday (Monday through Friday of the reference week).
 5. Output MUST conform strictly to the following JSON schema:
 {{
   "activities": [
@@ -70,27 +72,79 @@ def parse_relative_date(date_term: str, ref_date: datetime) -> str:
         
     return ref_date.strftime("%Y-%m-%d")
 
+def _infer_hints(text_lower: str) -> Tuple[str, str]:
+    project_hint = ""
+    task_hint = ""
+    if "acme" in text_lower:
+        project_hint = "Acme"
+        if "design" in text_lower:
+            task_hint = "Design"
+        elif "dev" in text_lower or "development" in text_lower:
+            task_hint = "Development"
+    elif "standup" in text_lower or "internal" in text_lower:
+        project_hint = "Internal Operations"
+        task_hint = "Standup"
+    elif "initech" in text_lower:
+        project_hint = "Initech"
+        task_hint = "Fieldwork"
+    elif "globex" in text_lower:
+        project_hint = "Globex"
+        task_hint = "Migration" if "migrat" in text_lower else "Analysis"
+    return project_hint, task_hint
+
+
 def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, Any]]:
     """Deterministic NLP extractor that reliably splits compound sentences and extracts activities."""
+    text_lower = text.lower()
+
+    # Handle Mon-Fri week spans (e.g. "8 hours a day on Globex data migration from Monday to Friday")
+    if re.search(r"\bmonday\s+(?:to|through|-|–)\s+friday\b|\bmon\s*(?:-|to)\s*fri\b|\bflat\s+8h\s+week\b", text_lower):
+        hour_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h\b)", text, re.IGNORECASE)
+        hours = float(hour_match.group(1)) if hour_match else 8.0
+        project_hint, task_hint = _infer_hints(text_lower)
+        if not project_hint:
+            project_hint, task_hint = "Globex", "Migration"
+        monday = ref_date - timedelta(days=ref_date.weekday())
+        billable_intent = None
+        if "non-billable" in text_lower or "not billable" in text_lower:
+            billable_intent = False
+        elif "billable" in text_lower:
+            billable_intent = True
+        return [
+            {
+                "raw_snippet": text,
+                "date": (monday + timedelta(days=i)).strftime("%Y-%m-%d"),
+                "hours": hours,
+                "project_hint": project_hint,
+                "task_hint": task_hint,
+                "billable_intent": billable_intent,
+            }
+            for i in range(5)
+        ]
+
     activities = []
-    
+
     # Split on "and", "also", "then", ";" or "," when followed by hours/activity
     raw_clauses = re.split(r"\band\b|\balso\b|\bthen\b|;|\n|,\s*(?=\d+\s*(?:hours?|hrs?|h\b))", text, flags=re.IGNORECASE)
     clauses = [c.strip() for c in raw_clauses if c.strip()]
-    
+
     # Check if a date is mentioned anywhere in the overall prompt
     overall_date_term = None
-    if "yesterday" in text.lower():
+    if "yesterday" in text_lower:
         overall_date_term = "yesterday"
-    elif "today" in text.lower():
+    elif "today" in text_lower:
         overall_date_term = "today"
-    elif any(d in text.lower() for d in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]):
+    elif any(d in text_lower for d in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]):
         for d in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
-            if d in text.lower():
+            if d in text_lower:
                 overall_date_term = d
                 break
-                
+
+    last_project_hint = ""
+    last_task_hint = ""
+
     for clause in clauses:
+        clause_lower = clause.lower()
         # Extract hours (e.g. "3 hours", "3 hrs", "1.5h", "1 hr", "2 hours")
         hour_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h\b)", clause, re.IGNORECASE)
         if not hour_match:
@@ -99,53 +153,41 @@ def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, 
             hours = float(num_match.group(1)) if num_match else 1.0
         else:
             hours = float(hour_match.group(1))
-            
+
         # Determine date for this clause
         clause_date = None
         explicit_date_match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", clause)
         if explicit_date_match:
             clause_date = explicit_date_match.group(1)
-        elif "yesterday" in clause.lower():
+        elif "yesterday" in clause_lower:
             clause_date = parse_relative_date("yesterday", ref_date)
-        elif "today" in clause.lower():
+        elif "today" in clause_lower:
             clause_date = parse_relative_date("today", ref_date)
-        elif any(d in clause.lower() for d in ["sunday", "saturday", "monday", "tuesday", "wednesday", "thursday", "friday"]):
+        elif any(d in clause_lower for d in ["sunday", "saturday", "monday", "tuesday", "wednesday", "thursday", "friday"]):
             for d in ["sunday", "saturday", "monday", "tuesday", "wednesday", "thursday", "friday"]:
-                if d in clause.lower():
+                if d in clause_lower:
                     clause_date = parse_relative_date(d, ref_date)
                     break
         elif overall_date_term:
             clause_date = parse_relative_date(overall_date_term, ref_date)
         else:
             clause_date = ref_date.strftime("%Y-%m-%d")
-            
+
         # Billable intent
         billable_intent = None
-        if "non-billable" in clause.lower() or "not billable" in clause.lower():
+        if "non-billable" in clause_lower or "not billable" in clause_lower:
             billable_intent = False
-        elif "billable" in clause.lower():
+        elif "billable" in clause_lower:
             billable_intent = True
-        elif len(clauses) == 1 and "billable" in text.lower():
-            billable_intent = not ("non-billable" in text.lower() or "not billable" in text.lower())
-            
-        # Hints
-        project_hint = ""
-        task_hint = ""
-        if "acme" in clause.lower():
-            project_hint = "Acme"
-            if "design" in clause.lower():
-                task_hint = "Design"
-            elif "dev" in clause.lower() or "development" in clause.lower():
-                task_hint = "Development"
-        elif "standup" in clause.lower() or "internal" in clause.lower():
-            project_hint = "Internal Operations"
-            task_hint = "Standup"
-        elif "initech" in clause.lower():
-            project_hint = "Initech"
-            task_hint = "Fieldwork"
-        elif "globex" in clause.lower():
-            project_hint = "Globex"
-            task_hint = "Migration" if "migrat" in clause.lower() else "Analysis"
+        elif len(clauses) == 1 and "billable" in text_lower:
+            billable_intent = not ("non-billable" in text_lower or "not billable" in text_lower)
+
+        # Hints (inherit previous clause hint if omitted in multi-day prompts)
+        project_hint, task_hint = _infer_hints(clause_lower)
+        if project_hint:
+            last_project_hint, last_task_hint = project_hint, task_hint
+        elif last_project_hint:
+            project_hint, task_hint = last_project_hint, last_task_hint
 
         activities.append({
             "raw_snippet": clause,
@@ -155,7 +197,7 @@ def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, 
             "task_hint": task_hint,
             "billable_intent": billable_intent
         })
-        
+
     return activities
 
 def validate_activities_payload(data: Any) -> bool:
