@@ -124,7 +124,10 @@ def evaluate_anomalies(
                 "rule_id": "DUPLICATE",
                 "severity": "warning",
                 "message": f"You already logged {entry.get('hours')} hrs here today.",
-                "suggested_fix": None
+                "suggested_fix": {
+                    "action": "remove_duplicate",
+                    "value": None
+                }
             })
             break
 

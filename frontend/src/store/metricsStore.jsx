@@ -11,6 +11,7 @@ export const MODEL_PRICING_INR_PER_1M = {
 };
 
 const DEFAULT_PRICING = { input: 10.0, output: 40.0, label: 'Standard Model' };
+export const WORKING_DAYS_PER_MONTH = 20;
 
 export const INITIAL_GREETING_MESSAGE = {
   sender: 'bot',
@@ -81,11 +82,63 @@ export const INITIAL_SEED_TELEMETRY = [
   }
 ];
 
-export const INITIAL_SEED_LEAKAGE_INR = 12000;
+// Disputed billing prevented starts at 0 and increments only when the user resolves an anomaly
+export const INITIAL_SEED_LEAKAGE_INR = 0;
 
 const PROJECTS_BY_CODE = Object.fromEntries(
   MOCK_CATALOGUE.projects.map((p) => [p.code, p])
 );
+
+function formatHoursCompact(hours) {
+  const n = Number(hours) || 0;
+  return Number.isInteger(n) ? `${n}h` : `${n.toFixed(1)}h`;
+}
+
+export function reconcileDraftDuplicates(drafts = [], confirmed = []) {
+  return drafts.map((draft) => {
+    const existingAnomalies = (draft.anomalies || []).filter(
+      (a) => a.rule_id !== 'DUPLICATE'
+    );
+    const matchingConfirmed = confirmed.find(
+      (c) =>
+        c.date === draft.date &&
+        c.project_code === draft.project_code &&
+        (c.task || '').toLowerCase() === (draft.task || '').toLowerCase()
+    );
+
+    if (!matchingConfirmed) {
+      return {
+        ...draft,
+        anomalies: existingAnomalies
+      };
+    }
+
+    const dupAnomaly = {
+      rule_id: 'DUPLICATE',
+      severity: 'warning',
+      message: `Already logged ${formatHoursCompact(matchingConfirmed.hours)} here`,
+      suggested_fix: {
+        action: 'remove_duplicate',
+        value: draft.id
+      }
+    };
+
+    return {
+      ...draft,
+      anomalies: [...existingAnomalies, dupAnomaly]
+    };
+  });
+}
+
+function getPreventedBillingForDraft(draft, ruleIdsToCount = ['CLOSED_PROJECT', 'DUPLICATE']) {
+  if (!draft || !draft.is_billable) return 0;
+  const anomalies = draft.anomalies || [];
+  const hasCountable = anomalies.some((a) => ruleIdsToCount.includes(a.rule_id));
+  if (!hasCountable) return 0;
+  const proj = PROJECTS_BY_CODE[draft.project_code];
+  const rate = proj?.bill_rate || 0;
+  return (Number(draft.hours) || 0) * rate;
+}
 
 export function normalizeTelemetry(rawTelemetry, draftEntries = []) {
   if (!rawTelemetry || typeof rawTelemetry !== 'object') {
@@ -180,9 +233,8 @@ export function computeSharedMetrics({
   const outputTokens = telemetryHistory.reduce((sum, t) => sum + (Number(t.output_tokens) || 0), 0);
   const totalTokens = inputTokens + outputTokens;
   const aiCostRupees = calculateAiCostInr(telemetryHistory);
-  const fullyLoadedCostRupees = aiCostRupees + (Number(fullyLoadedMonthlyCost) || 0);
 
-  // Time saved & Value
+  // Time saved & session value
   const manualMinutes = confirmedCount * 2.0;
   const chatMinutes = chatSeconds / 60;
   const timeSavedMinutes = Math.max(
@@ -192,10 +244,20 @@ export function computeSharedMetrics({
   const valueOfTimeSavedRupees = (timeSavedMinutes / 60) * hourlyRate;
   const totalValueRupees = valueOfTimeSavedRupees + leakageCaughtRupees;
 
+  // Monthly projection (20 working days):
+  // Fully loaded ROI = (session value * 20) / (token cost * 20 + fully loaded monthly cost)
+  const monthlyPlatformCost = Number(fullyLoadedMonthlyCost) || 0;
+  const projectedMonthlyValueRupees = totalValueRupees * WORKING_DAYS_PER_MONTH;
+  const projectedMonthlyTokenCostRupees = aiCostRupees * WORKING_DAYS_PER_MONTH;
+  const fullyLoadedCostRupees = projectedMonthlyTokenCostRupees + monthlyPlatformCost;
+
   const canShowRoi = confirmedCount >= 3;
-  const tokenRoi = aiCostRupees > 0 ? totalValueRupees / aiCostRupees : 0;
+  const tokenRoi =
+    projectedMonthlyTokenCostRupees > 0
+      ? projectedMonthlyValueRupees / projectedMonthlyTokenCostRupees
+      : 0;
   const fullyLoadedRoi =
-    fullyLoadedCostRupees > 0 ? totalValueRupees / fullyLoadedCostRupees : 0;
+    fullyLoadedCostRupees > 0 ? projectedMonthlyValueRupees / fullyLoadedCostRupees : 0;
 
   const activeModel =
     telemetryHistory.length > 0
@@ -214,11 +276,13 @@ export function computeSharedMetrics({
     valueOfTimeSavedRupees,
     leakageCaughtRupees,
     totalValueRupees,
+    projectedMonthlyValueRupees,
+    projectedMonthlyTokenCostRupees,
     inputTokens,
     outputTokens,
     totalTokens,
     aiCostRupees,
-    fullyLoadedMonthlyCost: Number(fullyLoadedMonthlyCost) || 0,
+    fullyLoadedMonthlyCost: monthlyPlatformCost,
     fullyLoadedCostRupees,
     tokenRoi,
     fullyLoadedRoi,
@@ -244,10 +308,6 @@ export function analyzeConsultantWeek(consultant) {
   const sameDayLoggingPct =
     entries.length > 0 ? Math.round((sameDayCount / entries.length) * 100) : 0;
 
-  // Check Flat 8h pattern:
-  // 1) Identical daily hours (>= 5 days, all days have identical total)
-  // 2) One project > 90% of total hours
-  // 3) Logged 5+ days late (average days_late >= 5)
   const hoursByDay = {};
   const hoursByProject = {};
   entries.forEach((e) => {
@@ -318,6 +378,7 @@ export function MetricsProvider({ children }) {
       .then((data) => {
         if (data && Array.isArray(data.confirmed_entries) && data.confirmed_entries.length > 0) {
           setConfirmedEntries(data.confirmed_entries);
+          setDraftEntries((prev) => reconcileDraftDuplicates(prev, data.confirmed_entries));
         }
       })
       .catch((err) => console.log('Backend starting or unreachable:', err));
@@ -360,19 +421,6 @@ export function MetricsProvider({ children }) {
           setTelemetryHistory((prev) => [...prev, normalized]);
         }
 
-        if (data.draft_entries) {
-          data.draft_entries.forEach((entry) => {
-            const hasClosedProjectAnomaly = entry.anomalies?.some(
-              (a) => a.rule_id === 'CLOSED_PROJECT'
-            );
-            if (hasClosedProjectAnomaly) {
-              const proj = PROJECTS_BY_CODE[entry.project_code];
-              const rate = proj?.bill_rate || 3000;
-              setLeakageCaughtRupees((prev) => prev + (Number(entry.hours) || 4) * rate);
-            }
-          });
-        }
-
         const botMsg = {
           sender: 'bot',
           text: data.assistant_message || 'Draft entries ready for review.',
@@ -382,7 +430,9 @@ export function MetricsProvider({ children }) {
         setMessages((prev) => [...prev, botMsg]);
 
         if (data.draft_entries && data.draft_entries.length > 0) {
-          setDraftEntries((prev) => [...prev, ...data.draft_entries]);
+          setDraftEntries((prev) =>
+            reconcileDraftDuplicates([...prev, ...data.draft_entries], confirmedEntries)
+          );
         }
       } catch (err) {
         console.error('Chat parse failed:', err);
@@ -398,7 +448,7 @@ export function MetricsProvider({ children }) {
         setIsLoading(false);
       }
     },
-    [conversationId, syncActiveChatSeconds]
+    [conversationId, confirmedEntries, syncActiveChatSeconds]
   );
 
   const selectClarification = useCallback(
@@ -434,7 +484,9 @@ export function MetricsProvider({ children }) {
             setTelemetryHistory((prev) => [...prev, normalized]);
           }
           if (data.draft_entries && data.draft_entries.length > 0) {
-            setDraftEntries((prev) => [...prev, ...data.draft_entries]);
+            setDraftEntries((prev) =>
+              reconcileDraftDuplicates([...prev, ...data.draft_entries], confirmedEntries)
+            );
           }
           setMessages((prev) => [
             ...prev,
@@ -478,7 +530,9 @@ export function MetricsProvider({ children }) {
         ...prev,
         { model: 'openai/gpt-oss-20b', input_tokens: 180, output_tokens: 75, latency_ms: 110 }
       ]);
-      setDraftEntries((prev) => [...prev, newDraft]);
+      setDraftEntries((prev) =>
+        reconcileDraftDuplicates([...prev, newDraft], confirmedEntries)
+      );
       setMessages((prev) => [
         ...prev,
         {
@@ -488,12 +542,117 @@ export function MetricsProvider({ children }) {
         }
       ]);
     },
-    [conversationId, syncActiveChatSeconds]
+    [conversationId, confirmedEntries, syncActiveChatSeconds]
   );
 
-  const updateDraft = useCallback((id, updates) => {
-    setDraftEntries((prev) => prev.map((d) => (d.id === id ? { ...d, ...updates } : d)));
-  }, []);
+  const updateDraft = useCallback(
+    (id, updates) => {
+      setDraftEntries((prev) => {
+        let preventedDelta = 0;
+        const next = prev.map((d) => {
+          if (d.id !== id) return d;
+          const updated = { ...d, ...updates };
+          const hadClosed = (d.anomalies || []).some((a) => a.rule_id === 'CLOSED_PROJECT');
+          const resolvedClosedManually =
+            hadClosed &&
+            ((updates.project_code && updates.project_code !== d.project_code) ||
+              updates.is_billable === false);
+          if (resolvedClosedManually) {
+            preventedDelta += getPreventedBillingForDraft(d, ['CLOSED_PROJECT']);
+            updated.anomalies = (updated.anomalies || []).filter(
+              (a) => a.rule_id !== 'CLOSED_PROJECT'
+            );
+          }
+          return updated;
+        });
+
+        if (preventedDelta > 0) {
+          setLeakageCaughtRupees((curr) => curr + preventedDelta);
+        }
+        return reconcileDraftDuplicates(next, confirmedEntries);
+      });
+    },
+    [confirmedEntries]
+  );
+
+  const resolveAnomalyFix = useCallback(
+    (draft, fix) => {
+      if (!draft || !fix) return;
+
+      if (fix.action === 'remove_duplicate') {
+        const prevented = getPreventedBillingForDraft(draft, ['DUPLICATE']);
+        if (prevented > 0) {
+          setLeakageCaughtRupees((curr) => curr + prevented);
+        }
+        setDraftEntries((prev) => prev.filter((d) => d.id !== draft.id));
+        return;
+      }
+
+      if (fix.action === 'change_project') {
+        const prevented = getPreventedBillingForDraft(draft, ['CLOSED_PROJECT']);
+        if (prevented > 0) {
+          setLeakageCaughtRupees((curr) => curr + prevented);
+        }
+        const proj = PROJECTS_BY_CODE[fix.value];
+        const remainingAnomalies = (draft.anomalies || []).filter(
+          (a) => a.rule_id !== 'CLOSED_PROJECT' && a.rule_id !== 'BUDGET_BURN'
+        );
+        setDraftEntries((prev) =>
+          reconcileDraftDuplicates(
+            prev.map((d) =>
+              d.id === draft.id
+                ? {
+                    ...d,
+                    project_code: fix.value,
+                    project_name: proj?.name || fix.value,
+                    task: proj?.tasks[0] || 'General',
+                    is_billable: proj ? proj.is_billable : false,
+                    user_edited: true,
+                    anomalies: remainingAnomalies
+                  }
+                : d
+            ),
+            confirmedEntries
+          )
+        );
+        return;
+      }
+
+      if (fix.action === 'set_non_billable') {
+        const remainingAnomalies = (draft.anomalies || []).filter(
+          (a) => a.rule_id !== 'BILLABLE_INTERNAL'
+        );
+        setDraftEntries((prev) =>
+          reconcileDraftDuplicates(
+            prev.map((d) =>
+              d.id === draft.id
+                ? { ...d, is_billable: false, user_edited: true, anomalies: remainingAnomalies }
+                : d
+            ),
+            confirmedEntries
+          )
+        );
+        return;
+      }
+
+      if (fix.action === 'adjust_hours') {
+        const remainingAnomalies = (draft.anomalies || []).filter(
+          (a) => a.rule_id !== 'UNUSUAL_HOURS'
+        );
+        setDraftEntries((prev) =>
+          reconcileDraftDuplicates(
+            prev.map((d) =>
+              d.id === draft.id
+                ? { ...d, hours: fix.value, user_edited: true, anomalies: remainingAnomalies }
+                : d
+            ),
+            confirmedEntries
+          )
+        );
+      }
+    },
+    [confirmedEntries]
+  );
 
   const confirmDraft = useCallback(
     async (draft) => {
@@ -511,26 +670,42 @@ export function MetricsProvider({ children }) {
         console.warn('Confirm persistence error, committing locally:', e);
       }
 
-      setDraftEntries((prev) => prev.filter((d) => d.id !== draft.id));
-      setConfirmedEntries((prev) => [
-        ...prev,
-        {
-          ...draft,
-          status: 'confirmed',
-          days_late: 0,
-          id: `conf_${draft.id}`
-        }
-      ]);
+      const confirmedItem = {
+        ...draft,
+        status: 'confirmed',
+        days_late: 0,
+        id: `conf_${draft.id}`
+      };
+
+      const nextConfirmed = [...confirmedEntries, confirmedItem];
+      setConfirmedEntries(nextConfirmed);
+      setDraftEntries((prev) =>
+        reconcileDraftDuplicates(
+          prev.filter((d) => d.id !== draft.id),
+          nextConfirmed
+        )
+      );
     },
-    [syncActiveChatSeconds]
+    [confirmedEntries, syncActiveChatSeconds]
   );
 
   const discardDraft = useCallback((id) => {
-    setDraftEntries((prev) => prev.filter((d) => d.id !== id));
+    setDraftEntries((prev) => {
+      const target = prev.find((d) => d.id === id);
+      const prevented = getPreventedBillingForDraft(target, ['CLOSED_PROJECT', 'DUPLICATE']);
+      if (prevented > 0) {
+        setLeakageCaughtRupees((curr) => curr + prevented);
+      }
+      return prev.filter((d) => d.id !== id);
+    });
   }, []);
 
+  // Confirm ONLY clean Draft rows (zero anomalies); Needs review rows require individual resolution
   const confirmAll = useCallback(async () => {
-    if (draftEntries.length === 0) return;
+    const cleanDrafts = draftEntries.filter(
+      (d) => !d.anomalies || d.anomalies.length === 0
+    );
+    if (cleanDrafts.length === 0) return;
     syncActiveChatSeconds();
 
     try {
@@ -539,23 +714,30 @@ export function MetricsProvider({ children }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: 'u_priya',
-          entries: draftEntries
+          entries: cleanDrafts
         })
       });
     } catch (e) {
       console.warn('Confirm all persistence error, committing locally:', e);
     }
 
-    const newlyConfirmed = draftEntries.map((d) => ({
+    const cleanIds = new Set(cleanDrafts.map((d) => d.id));
+    const newlyConfirmed = cleanDrafts.map((d) => ({
       ...d,
       status: 'confirmed',
       days_late: 0,
       id: `conf_${d.id}`
     }));
 
-    setConfirmedEntries((prev) => [...prev, ...newlyConfirmed]);
-    setDraftEntries([]);
-  }, [draftEntries, syncActiveChatSeconds]);
+    const nextConfirmed = [...confirmedEntries, ...newlyConfirmed];
+    setConfirmedEntries(nextConfirmed);
+    setDraftEntries((prev) =>
+      reconcileDraftDuplicates(
+        prev.filter((d) => !cleanIds.has(d.id)),
+        nextConfirmed
+      )
+    );
+  }, [draftEntries, confirmedEntries, syncActiveChatSeconds]);
 
   const resetSession = useCallback(async () => {
     try {
@@ -628,6 +810,7 @@ export function MetricsProvider({ children }) {
     sendMessage,
     selectClarification,
     updateDraft,
+    resolveAnomalyFix,
     confirmDraft,
     discardDraft,
     confirmAll,
@@ -644,4 +827,3 @@ export function useMetrics() {
   }
   return ctx;
 }
-

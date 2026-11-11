@@ -11,13 +11,14 @@ export default function AdminMacroModal({ onClose }) {
     const rows = [
       ['Section', 'Metric', 'Value'],
       ['Session KPIs', 'Time Saved (Minutes)', metrics.timeSavedMinutes.toFixed(1)],
-      ['Session KPIs', 'Total Value (INR)', Math.round(metrics.totalValueRupees)],
-      ['Session KPIs', 'Leakage Caught (INR)', Math.round(metrics.leakageCaughtRupees)],
+      ['Session KPIs', 'Session Value (INR)', Math.round(metrics.totalValueRupees)],
+      ['Session KPIs', 'Disputed Billing Prevented (INR)', Math.round(metrics.leakageCaughtRupees)],
       ['Session KPIs', 'Tokens', metrics.totalTokens],
       ['Session KPIs', 'AI Token Cost (INR)', metrics.aiCostRupees.toFixed(2)],
-      ['Session KPIs', 'Fully Loaded Cost (INR)', metrics.fullyLoadedCostRupees.toFixed(2)],
-      ['Session KPIs', 'Token ROI', metrics.canShowRoi ? formatRoi(metrics.tokenRoi) : 'Pending 3+ entries'],
+      ['Session KPIs', '20-Day Projected Value (INR)', Math.round(metrics.projectedMonthlyValueRupees)],
+      ['Session KPIs', '20-Day Fully Loaded Cost (INR)', metrics.fullyLoadedCostRupees.toFixed(2)],
       ['Session KPIs', 'Fully Loaded ROI', metrics.canShowRoi ? formatRoi(metrics.fullyLoadedRoi) : 'Pending 3+ entries'],
+      ['Session KPIs', 'Token ROI (Reference)', metrics.canShowRoi ? formatRoi(metrics.tokenRoi) : 'Pending 3+ entries'],
       ['Session KPIs', 'Client Billable Value Logged (Context, not counted in ROI)', Math.round(metrics.billingValueLoggedRupees)],
       [],
       ['Consultant', 'Confirmed Hours', 'Utilization %', 'Edit Rate %', 'Same-Day Logging %', 'Flat 8h Pattern'],
@@ -81,12 +82,12 @@ export default function AdminMacroModal({ onClose }) {
             </div>
 
             <div className="p-4 bg-white border border-slate-200 rounded-lg">
-              <span className="text-xs font-medium text-slate-500">Leakage caught</span>
+              <span className="text-xs font-medium text-slate-500">Disputed billing prevented</span>
               <div className="text-xl font-bold text-slate-900 mt-1">
                 ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Blocked invalid billing
+                {metrics.leakageCaughtRupees > 0 ? 'Resolved anomalies' : 'Resolve flagged rows'}
               </p>
             </div>
 
@@ -96,35 +97,24 @@ export default function AdminMacroModal({ onClose }) {
                 ₹{metrics.aiCostRupees.toFixed(2)}
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                {metrics.totalTokens.toLocaleString('en-IN')} tokens · Loaded ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
+                {metrics.totalTokens.toLocaleString('en-IN')} tokens
               </p>
             </div>
 
             <div className="p-4 bg-white border border-slate-200 rounded-lg">
-              <span className="text-xs font-medium text-slate-500">ROI</span>
+              <span className="text-xs font-medium text-slate-500">Fully loaded ROI</span>
               {metrics.canShowRoi ? (
                 <>
-                  <div className="flex items-baseline justify-between gap-2 mt-1">
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">Token ROI</span>
-                      <span className="text-base font-bold text-blue-600">
-                        {formatRoi(metrics.tokenRoi)}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-500 block">Fully loaded</span>
-                      <span className="text-base font-bold text-slate-900">
-                        {formatRoi(metrics.fullyLoadedRoi)}
-                      </span>
-                    </div>
+                  <div className="text-xl font-bold text-blue-600 mt-1">
+                    {formatRoi(metrics.fullyLoadedRoi)}
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Value ₹{Math.round(metrics.totalValueRupees).toLocaleString('en-IN')}
+                  <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                    20d: ₹{Math.round(metrics.projectedMonthlyValueRupees).toLocaleString('en-IN')} / ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
                   </p>
                 </>
               ) : (
                 <>
-                  <div className="text-xl font-bold text-slate-300 mt-1">—</div>
+                  <div className="text-base font-semibold text-slate-400 mt-1">Pending</div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     Unlocks at 3 entries ({metrics.confirmedCount}/3)
                   </p>
@@ -133,12 +123,12 @@ export default function AdminMacroModal({ onClose }) {
             </div>
           </div>
 
-          {/* Consultants Table (7 Consultants, 1-Week Entries, Flat 8h Pattern Flag) */}
+          {/* Consultants Table */}
           <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-semibold text-slate-900">
-                  Consultant logging discipline ({teamConsultants.length} consultants · Nov 9 – Nov 13)
+                  Consultant logging discipline ({teamConsultants.length} consultants, Nov 9 to Nov 13)
                 </h3>
                 <p className="text-[11px] text-slate-500">
                   Flat 8h pattern flags identical daily hours, &gt;90% on one project, and 5+ days late logging
@@ -224,7 +214,7 @@ export default function AdminMacroModal({ onClose }) {
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <h4 className="font-semibold text-slate-900 text-xs">Value breakdown</h4>
               <span className="text-[11px] text-slate-500">
-                Loaded rate: ₹{hourlyRate.toLocaleString('en-IN')}/hr
+                Loaded rate: ₹{hourlyRate.toLocaleString('en-IN')}/hr · 20 working days/mo
               </span>
             </div>
 
@@ -248,37 +238,37 @@ export default function AdminMacroModal({ onClose }) {
 
               <div className="py-2 flex items-center justify-between">
                 <div>
-                  <span className="font-medium text-slate-900">Value of time saved</span>
+                  <span className="font-medium text-slate-900">Value of time saved (session / 20d projected)</span>
                   <p className="text-[11px] text-slate-500">
                     {metrics.timeSavedMinutes.toFixed(1)} mins saved vs manual entry
                   </p>
                 </div>
                 <span className="font-semibold text-slate-900">
-                  ₹{Math.round(metrics.valueOfTimeSavedRupees).toLocaleString('en-IN')}
+                  ₹{Math.round(metrics.valueOfTimeSavedRupees).toLocaleString('en-IN')} / ₹{Math.round(metrics.valueOfTimeSavedRupees * 20).toLocaleString('en-IN')}
                 </span>
               </div>
 
               <div className="py-2 flex items-center justify-between">
                 <div>
-                  <span className="font-medium text-slate-900">Disputed invoice leakage blocked</span>
+                  <span className="font-medium text-slate-900">Disputed billing prevented (session / 20d projected)</span>
                   <p className="text-[11px] text-slate-500">
-                    Invalid billing caught before submission
+                    Invalid billing resolved before submission
                   </p>
                 </div>
                 <span className="font-semibold text-slate-900">
-                  ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
+                  ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')} / ₹{Math.round(metrics.leakageCaughtRupees * 20).toLocaleString('en-IN')}
                 </span>
               </div>
 
               <div className="py-2 flex items-center justify-between">
                 <div>
-                  <span className="font-medium text-slate-900">AI token cost / Fully loaded cost</span>
+                  <span className="font-medium text-slate-900">Monthly fully loaded cost</span>
                   <p className="text-[11px] text-slate-500">
-                    {metrics.totalTokens.toLocaleString('en-IN')} tokens + ₹{metrics.fullyLoadedMonthlyCost}/user/mo platform &amp; infra
+                    Token cost (₹{metrics.aiCostRupees.toFixed(2)} x 20 = ₹{metrics.projectedMonthlyTokenCostRupees.toFixed(2)}) + ₹{metrics.fullyLoadedMonthlyCost}/user/mo platform &amp; infra
                   </p>
                 </div>
                 <span className="font-semibold text-slate-900">
-                  ₹{metrics.aiCostRupees.toFixed(2)} / ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
+                  ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
                 </span>
               </div>
             </div>

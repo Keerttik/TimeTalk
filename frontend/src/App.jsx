@@ -17,6 +17,7 @@ function TimeTalkWorkspace() {
     sendMessage,
     selectClarification,
     updateDraft,
+    resolveAnomalyFix,
     confirmDraft,
     discardDraft,
     confirmAll,
@@ -146,6 +147,7 @@ function TimeTalkWorkspace() {
               draftEntries={draftEntries}
               confirmedEntries={confirmedEntries}
               onUpdateDraft={updateDraft}
+              onResolveAnomalyFix={resolveAnomalyFix}
               onConfirmDraft={confirmDraft}
               onDiscardDraft={discardDraft}
               onConfirmAll={confirmAll}

@@ -30,37 +30,46 @@ export default function AIValuePanel() {
 
       {/* Expandable Assumptions Drawer */}
       {showAssumptions && (
-        <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2 py-1 rounded-lg text-slate-800">
-              Token ROI = Value / Token cost
+        <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2.5 py-1 rounded-lg text-slate-800">
+              Fully loaded ROI = (Session value x 20 working days) / (Token cost x 20 + Fully loaded monthly cost)
             </span>
-            <span className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2 py-1 rounded-lg text-slate-800">
-              Fully loaded ROI = Value / (Token cost + Fully loaded cost)
-            </span>
+            <div className="flex items-center gap-2 text-[11px] bg-[#F7F8FA] border border-slate-200 px-2.5 py-1 rounded-lg">
+              <span className="text-slate-500">Token ROI:</span>
+              <strong className="text-slate-900">
+                {metrics.canShowRoi ? formatRoi(metrics.tokenRoi) : 'Pending (3+ entries)'}
+              </strong>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-[11px]">
-            <label className="flex items-center gap-1.5 text-slate-600">
-              <span>Fully loaded cost (₹/user/mo):</span>
-              <input
-                type="number"
-                min="0"
-                step="5"
-                value={fullyLoadedMonthlyCost}
-                onChange={(e) => setFullyLoadedMonthlyCost(Math.max(0, Number(e.target.value) || 0))}
-                className="w-16 px-2 py-0.5 bg-[#F7F8FA] border border-slate-200 rounded-lg text-slate-900 font-semibold text-center focus:outline-hidden focus:border-blue-600"
-              />
-            </label>
-            <span>
-              Rate: <strong className="text-slate-900">₹{hourlyRate.toLocaleString('en-IN')}/hr</strong>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-[11px]">
+            <span className="text-slate-500 italic">
+              Token cost is negligible; fully loaded cost is the real test.
             </span>
-            <span>
-              Baseline: <strong className="text-slate-900">2.0 min/entry</strong>
-            </span>
-            <span>
-              Model: <strong className="text-slate-900">{metrics.activeModel}</strong>
-            </span>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-1.5 text-slate-600">
+                <span>Fully loaded cost (₹/user/mo):</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="5"
+                  value={fullyLoadedMonthlyCost}
+                  onChange={(e) => setFullyLoadedMonthlyCost(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-16 px-2 py-0.5 bg-[#F7F8FA] border border-slate-200 rounded-lg text-slate-900 font-semibold text-center focus:outline-hidden focus:border-blue-600"
+                />
+              </label>
+              <span>
+                Rate: <strong className="text-slate-900">₹{hourlyRate.toLocaleString('en-IN')}/hr</strong>
+              </span>
+              <span>
+                Baseline: <strong className="text-slate-900">2.0 min/entry</strong>
+              </span>
+              <span>
+                Model: <strong className="text-slate-900">{metrics.activeModel}</strong>
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -87,10 +96,10 @@ export default function AIValuePanel() {
           </div>
         </div>
 
-        {/* 2. Leakage caught */}
+        {/* 2. Disputed billing prevented */}
         <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-            <span>Leakage caught</span>
+            <span>Disputed billing prevented</span>
             <ShieldCheck className="w-4 h-4 text-blue-600" />
           </div>
           <div className="mt-2">
@@ -98,7 +107,7 @@ export default function AIValuePanel() {
               ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              Blocked invalid billing
+              {metrics.leakageCaughtRupees > 0 ? 'Resolved anomalies' : 'Resolve flagged rows'}
             </div>
           </div>
         </div>
@@ -119,36 +128,25 @@ export default function AIValuePanel() {
           </div>
         </div>
 
-        {/* 4. ROI (Token ROI & Fully loaded ROI, uncapped, hidden until 3+ confirmed) */}
+        {/* 4. ROI (Fully loaded ROI main number, 20-day monthly projection) */}
         <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-            <span>ROI</span>
+            <span>Fully loaded ROI</span>
             <TrendingUp className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="mt-1.5">
+          <div className="mt-2">
             {metrics.canShowRoi ? (
               <>
-                <div className="flex items-baseline justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">Token ROI</span>
-                    <span className="text-base font-bold text-blue-600 tracking-tight">
-                      {formatRoi(metrics.tokenRoi)}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-500 block">Fully loaded</span>
-                    <span className="text-base font-bold text-slate-900 tracking-tight">
-                      {formatRoi(metrics.fullyLoadedRoi)}
-                    </span>
-                  </div>
+                <div className="text-xl font-bold text-blue-600 tracking-tight">
+                  {formatRoi(metrics.fullyLoadedRoi)}
                 </div>
-                <div className="text-[11px] text-slate-500 mt-1 truncate">
-                  Value ₹{Math.round(metrics.totalValueRupees).toLocaleString('en-IN')} · Loaded ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
+                <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                  20d: ₹{Math.round(metrics.projectedMonthlyValueRupees).toLocaleString('en-IN')} / ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
                 </div>
               </>
             ) : (
               <>
-                <div className="text-xl font-bold text-slate-300 tracking-tight">—</div>
+                <div className="text-base font-semibold text-slate-400 tracking-tight">Pending</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
                   Unlocks at 3 entries ({metrics.confirmedCount}/3)
                 </div>
