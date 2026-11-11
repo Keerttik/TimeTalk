@@ -13,6 +13,8 @@ from .anomalies import evaluate_anomalies, load_timesheets
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 SYSTEM_PROMPT_TEMPLATE = """You are TimeTalk, an enterprise timesheet assistant for Northwind Consulting.
 Your role is to parse employee work descriptions into structured JSON timesheet records.
@@ -24,11 +26,12 @@ APPROVED PROJECT CATALOGUE:
 
 RULES:
 1. ONLY match projects and tasks from the APPROVED PROJECT CATALOGUE. NEVER invent or hallucinate codes.
-2. If the user mentions a project that is ambiguous (e.g. "Acme" when both ACME-WEB and ACME-MOB exist without specifying web/mob), set confidence < 0.80 and specify the ambiguous options.
-3. Resolve relative dates accurately against the reference date:
+2. NEVER guess when a project mention is ambiguous: if the user says "Acme" without specifying Website vs. Mobile (except "design review" which belongs to ACME-WEB), keep "project_hint" as "Acme" (do NOT write ACME-WEB or ACME-MOB).
+3. Always preserve the user's original clause wording in "raw_snippet".
+4. Resolve relative dates accurately against the reference date:
    - If reference is Tuesday 2026-11-10, "yesterday" is 2026-11-09 (Monday).
    - "today" is 2026-11-10.
-4. Output MUST conform strictly to the following JSON schema:
+5. Output MUST conform strictly to the following JSON schema:
 {{
   "activities": [
     {{
@@ -155,41 +158,149 @@ def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, 
         
     return activities
 
-def call_gemini_api(prompt_text: str, catalogue_summary: str, ref_date_iso: str) -> Optional[Dict[str, Any]]:
-    if not GEMINI_API_KEY:
-        return None
-        
+def validate_activities_payload(data: Any) -> bool:
+    """Validate strict JSON schema for extracted activities."""
+    if not isinstance(data, dict):
+        return False
+    activities = data.get("activities")
+    if not isinstance(activities, list):
+        return False
+    for item in activities:
+        if not isinstance(item, dict):
+            return False
+        if "hours" not in item or "date" not in item:
+            return False
+        try:
+            float(item["hours"])
+        except (TypeError, ValueError):
+            return False
+        if not isinstance(item["date"], str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", item["date"].strip()):
+            return False
+    return True
+
+
+def call_groq_api(
+    prompt_text: str,
+    catalogue_summary: str,
+    ref_date_iso: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, int]]]:
+    """Call Groq OpenAI-compatible chat completions API with JSON mode and 1 schema retry."""
+    api_key = os.getenv("GROQ_API_KEY") or GROQ_API_KEY
+    if not api_key:
+        return None, None
+
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         current_date_iso=ref_date_iso,
-        catalogue_json_condensed=catalogue_summary
+        catalogue_json_condensed=catalogue_summary,
     )
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": system_prompt + "\n\nUser Input: " + prompt_text}
-                ]
-            }
-        ],
-        "generationConfig": {
-            "responseMimeType": "application/json"
-        }
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
-    
-    try:
-        res = requests.post(url, json=payload, timeout=8)
-        if res.status_code == 200:
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt_text},
+    ]
+
+    for attempt in range(2):
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": messages,
+            "temperature": 0.0,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
+            if res.status_code != 200:
+                print(f"Groq API returned status {res.status_code}, falling back.")
+                return None, None
+
+            data = res.json()
+            choices = data.get("choices", [])
+            if not choices:
+                return None, None
+
+            raw_text = choices[0].get("message", {}).get("content", "")
+            parsed = json.loads(raw_text)
+            if validate_activities_payload(parsed):
+                usage_raw = data.get("usage", {})
+                usage = {
+                    "input_tokens": int(usage_raw.get("prompt_tokens", 0)),
+                    "output_tokens": int(usage_raw.get("completion_tokens", 0)),
+                }
+                return parsed, usage
+
+            if attempt == 0:
+                messages.append({"role": "assistant", "content": raw_text})
+                messages.append({
+                    "role": "user",
+                    "content": "Invalid schema. Return ONLY JSON with 'activities' array where each item has 'raw_snippet', 'date' (YYYY-MM-DD), 'hours' (number), 'project_hint', 'task_hint', 'billable_intent'.",
+                })
+        except Exception as e:
+            if attempt == 0:
+                messages.append({
+                    "role": "user",
+                    "content": f"Previous output was invalid JSON ({e}). Return valid JSON matching the schema.",
+                })
+            else:
+                print(f"Groq API call failed, falling back: {e}")
+
+    return None, None
+
+
+def call_gemini_api(
+    prompt_text: str,
+    catalogue_summary: str,
+    ref_date_iso: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, int]]]:
+    """Call Gemini API with JSON mode, 1 schema retry, and usage extraction."""
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or GEMINI_API_KEY
+    if not api_key:
+        return None, None
+
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        current_date_iso=ref_date_iso,
+        catalogue_json_condensed=catalogue_summary,
+    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    prompt_body = system_prompt + "\n\nUser Input: " + prompt_text
+
+    for attempt in range(2):
+        payload = {
+            "contents": [{"parts": [{"text": prompt_body}]}],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
+        try:
+            res = requests.post(url, json=payload, timeout=8)
+            if res.status_code != 200:
+                return None, None
+
             data = res.json()
             candidates = data.get("candidates", [])
-            if candidates:
-                text_content = candidates[0]["content"]["parts"][0]["text"]
-                return json.loads(text_content)
-    except Exception as e:
-        print(f"Gemini API call failed, falling back to local extractor: {e}")
-        
-    return None
+            if not candidates:
+                return None, None
+
+            text_content = candidates[0]["content"]["parts"][0]["text"]
+            parsed = json.loads(text_content)
+            if validate_activities_payload(parsed):
+                meta = data.get("usageMetadata", {})
+                usage = {
+                    "input_tokens": int(meta.get("promptTokenCount", 0)),
+                    "output_tokens": int(meta.get("candidatesTokenCount", 0)),
+                }
+                return parsed, usage
+
+            if attempt == 0:
+                prompt_body += "\n\nCorrection: Previous output failed schema validation. Ensure 'activities' is a list of objects with 'date' (YYYY-MM-DD) and numeric 'hours'."
+        except Exception as e:
+            if attempt == 0:
+                prompt_body += f"\n\nCorrection: Return valid JSON only ({e})."
+            else:
+                print(f"Gemini API call failed, falling back: {e}")
+
+    return None, None
+
 
 def extract_timesheet_drafts(
     user_message: str,
@@ -198,13 +309,13 @@ def extract_timesheet_drafts(
     """
     Main extraction pipeline:
     1. Parse client timestamp or default to 2026-11-10T20:00:00 (Tuesday)
-    2. Run LLM or deterministic fallback
+    2. Run LLM (Groq or Gemini) or deterministic fallback
     3. Match extracted items against catalogue
     4. Run anomaly engine on matched draft rows
     5. Return (draft_entries, telemetry, requires_clarification, clarification_prompt, clarification_options)
     """
     start_time = time.time()
-    
+
     # Default reference timestamp: 2026-11-10T20:00:00 (Tuesday)
     ref_date = datetime(2026, 11, 10, 20, 0, 0)
     if client_timestamp:
@@ -214,7 +325,7 @@ def extract_timesheet_drafts(
             ref_date = datetime.fromisoformat(clean_ts)
         except Exception:
             pass
-            
+
     catalogue = load_catalogue()
     catalogue_summary = json.dumps([{
         "code": p["code"],
@@ -224,11 +335,23 @@ def extract_timesheet_drafts(
         "type": p["type"],
         "status": p.get("status", "active")
     } for p in catalogue.get("projects", [])], indent=2)
-    
-    # Try LLM first
-    llm_output = call_gemini_api(user_message, catalogue_summary, ref_date.strftime("%Y-%m-%d"))
-    model_name = "gemini-2.5-flash" if llm_output else "localllm-hybrid-v1"
-    
+
+    ref_date_iso = ref_date.strftime("%Y-%m-%d")
+    llm_output: Optional[Dict[str, Any]] = None
+    llm_usage: Optional[Dict[str, int]] = None
+    model_name = "localllm-hybrid-v1"
+
+    # Prefer Groq when configured (fast, generous free tier), then Gemini, then local fallback
+    if os.getenv("GROQ_API_KEY") or GROQ_API_KEY:
+        llm_output, llm_usage = call_groq_api(user_message, catalogue_summary, ref_date_iso)
+        if llm_output:
+            model_name = GROQ_MODEL
+
+    if not llm_output and (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or GEMINI_API_KEY):
+        llm_output, llm_usage = call_gemini_api(user_message, catalogue_summary, ref_date_iso)
+        if llm_output:
+            model_name = "gemini-2.5-flash"
+
     if llm_output and "activities" in llm_output:
         raw_activities = llm_output["activities"]
     else:
@@ -287,7 +410,12 @@ def extract_timesheet_drafts(
         )
         
         latency_ms = int((time.time() - start_time) * 1000)
-        
+        trace_tokens = (
+            (llm_usage["input_tokens"] + llm_usage["output_tokens"])
+            if llm_usage and (llm_usage.get("input_tokens") or llm_usage.get("output_tokens"))
+            else (len(user_message.split()) * 4 + 180)
+        )
+
         entry = {
             "id": f"draft_{int(time.time()*1000)}_{entry_counter}",
             "date": date_str,
@@ -304,23 +432,27 @@ def extract_timesheet_drafts(
             "anomalies": anomalies,
             "trace": {
                 "model": model_name,
-                "tokens": len(user_message.split()) * 4 + 180,
+                "tokens": trace_tokens,
                 "latency_ms": max(latency_ms, 85)
             }
         }
         draft_entries.append(entry)
         entry_counter += 1
-        
+
     latency_total_ms = max(int((time.time() - start_time) * 1000), 120)
-    input_tokens = len(user_message.split()) * 6 + 240
-    output_tokens = len(draft_entries) * 65 + 40
-    
+    if llm_usage and (llm_usage.get("input_tokens") or llm_usage.get("output_tokens")):
+        input_tokens = llm_usage["input_tokens"]
+        output_tokens = llm_usage["output_tokens"]
+    else:
+        input_tokens = len(user_message.split()) * 6 + 240
+        output_tokens = len(draft_entries) * 65 + 40
+
     telemetry = {
         "model": model_name,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "latency_ms": latency_total_ms
     }
-    
+
     return draft_entries, telemetry, requires_clarification, clarification_prompt, clarification_options
 

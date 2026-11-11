@@ -30,3 +30,4 @@ WORKDIR /app/backend
 EXPOSE 8000
 
 CMD ["python", "run.py"]
+
