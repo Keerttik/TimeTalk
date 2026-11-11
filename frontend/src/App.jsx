@@ -8,11 +8,13 @@ import { MetricsProvider, useMetrics } from './store/metricsStore';
 
 function TimeTalkWorkspace() {
   const {
+    demoMode,
     messages,
     draftEntries,
     confirmedEntries,
     hourlyRate,
     isLoading,
+    setDemoMode,
     setHourlyRate,
     sendMessage,
     selectClarification,
@@ -53,6 +55,34 @@ function TimeTalkWorkspace() {
               <span className="text-xs text-slate-500">
                 Northwind Consulting (demo data)
               </span>
+            </div>
+
+            <div
+              className="hidden sm:flex items-center bg-[#F7F8FA] border border-slate-200 rounded-lg p-0.5 text-[11px] ml-2"
+              title="Choose whether Reset and page load start seeded or empty"
+            >
+              <button
+                type="button"
+                onClick={() => setDemoMode('seeded')}
+                className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                  demoMode === 'seeded'
+                    ? 'bg-white text-slate-900 border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Seeded
+              </button>
+              <button
+                type="button"
+                onClick={() => setDemoMode('empty')}
+                className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                  demoMode === 'empty'
+                    ? 'bg-white text-slate-900 border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Start empty
+              </button>
             </div>
           </div>
 

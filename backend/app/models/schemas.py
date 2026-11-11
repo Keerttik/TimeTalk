@@ -69,6 +69,11 @@ class TimesheetConfirmItem(BaseModel):
     hours: float
     is_billable: bool
     user_edited: bool = False
+    is_override: bool = False
+    override_reason: Optional[str] = None
+    overridden_rules: Optional[List[str]] = None
+    overridden_messages: Optional[List[str]] = None
+    override_timestamp: Optional[str] = None
 
 class TimesheetConfirmRequest(BaseModel):
     user_id: str = "u_priya"

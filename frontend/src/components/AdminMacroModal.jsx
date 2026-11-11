@@ -3,9 +3,13 @@ import { X, BarChart3, Download, AlertTriangle, CheckCircle2 } from 'lucide-reac
 import { useMetrics, formatRoi } from '../store/metricsStore';
 
 export default function AdminMacroModal({ onClose }) {
-  const { metrics, teamConsultants, hourlyRate } = useMetrics();
+  const { metrics, teamConsultants, overrideLogs, hourlyRate } = useMetrics();
 
   const flaggedCount = teamConsultants.filter((c) => c.flat8hPattern).length;
+  const totalOverrideCount = teamConsultants.reduce(
+    (sum, c) => sum + (c.overrideCount || 0),
+    0
+  );
 
   const handleExportCSV = () => {
     const rows = [
@@ -13,6 +17,7 @@ export default function AdminMacroModal({ onClose }) {
       ['Session KPIs', 'Time Saved (Minutes)', metrics.timeSavedMinutes.toFixed(1)],
       ['Session KPIs', 'Session Value (INR)', Math.round(metrics.totalValueRupees)],
       ['Session KPIs', 'Disputed Billing Prevented (INR)', Math.round(metrics.leakageCaughtRupees)],
+      ['Session KPIs', 'Policy Overrides (Session)', metrics.overrideCount],
       ['Session KPIs', 'Tokens', metrics.totalTokens],
       ['Session KPIs', 'AI Token Cost (INR)', metrics.aiCostRupees.toFixed(2)],
       ['Session KPIs', '20-Day Projected Value (INR)', Math.round(metrics.projectedMonthlyValueRupees)],
@@ -21,13 +26,14 @@ export default function AdminMacroModal({ onClose }) {
       ['Session KPIs', 'Token ROI (Reference)', metrics.canShowRoi ? formatRoi(metrics.tokenRoi) : 'Pending 3+ entries'],
       ['Session KPIs', 'Client Billable Value Logged (Context, not counted in ROI)', Math.round(metrics.billingValueLoggedRupees)],
       [],
-      ['Consultant', 'Confirmed Hours', 'Utilization %', 'Edit Rate %', 'Same-Day Logging %', 'Flat 8h Pattern'],
+      ['Consultant', 'Confirmed Hours', 'Utilization %', 'Edit Rate %', 'Same-Day Logging %', 'Overrides', 'Flat 8h Pattern'],
       ...teamConsultants.map((c) => [
         c.name,
         `${c.confirmedHours.toFixed(1)}h`,
         `${c.utilizationPct}%`,
         `${c.editRatePct}%`,
         `${c.sameDayLoggingPct}%`,
+        c.overrideCount || 0,
         c.flat8hPattern ? `Flagged (${c.flat8hReason})` : 'Clear'
       ])
     ];
@@ -134,9 +140,14 @@ export default function AdminMacroModal({ onClose }) {
                   Flat 8h pattern flags identical daily hours, &gt;90% on one project, and 5+ days late logging
                 </p>
               </div>
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
-                {flaggedCount} flagged
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-[#F7F8FA] text-slate-700 border border-slate-200">
+                  {totalOverrideCount} {totalOverrideCount === 1 ? 'override' : 'overrides'}
+                </span>
+                <span className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                  {flaggedCount} flagged
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -148,6 +159,7 @@ export default function AdminMacroModal({ onClose }) {
                     <th className="py-2.5 px-3 text-right">Utilization</th>
                     <th className="py-2.5 px-3 text-right">Edit rate</th>
                     <th className="py-2.5 px-3 text-right">Same-day logging %</th>
+                    <th className="py-2.5 px-3 text-right">Overrides</th>
                     <th className="py-2.5 px-4">Flat 8h pattern</th>
                   </tr>
                 </thead>
@@ -186,6 +198,15 @@ export default function AdminMacroModal({ onClose }) {
                       <td className="py-2.5 px-3 text-right font-medium text-slate-800">
                         {c.sameDayLoggingPct}%
                       </td>
+                      <td className="py-2.5 px-3 text-right">
+                        {c.overrideCount > 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-semibold text-[11px]">
+                            {c.overrideCount}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">0</span>
+                        )}
+                      </td>
                       <td className="py-2.5 px-4">
                         {c.flat8hPattern ? (
                           <div className="flex flex-col gap-0.5">
@@ -208,6 +229,37 @@ export default function AdminMacroModal({ onClose }) {
               </table>
             </div>
           </div>
+
+          {/* Session Override Log (shown when Confirm anyway is used) */}
+          {overrideLogs.length > 0 && (
+            <div className="border border-slate-200 rounded-lg p-4 bg-white space-y-2">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                <h4 className="font-semibold text-slate-900 text-xs">
+                  Logged overrides (this session)
+                </h4>
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                  {overrideLogs.length} {overrideLogs.length === 1 ? 'override' : 'overrides'}
+                </span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {overrideLogs.map((entry) => (
+                  <div key={entry.id} className="py-2 flex items-start justify-between gap-4">
+                    <div>
+                      <div className="font-medium text-slate-900">
+                        {entry.project_code} · {entry.task} · {entry.hours}h ({entry.date})
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">
+                        Reason: "{entry.override_reason}"
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-[#F7F8FA] text-slate-600 border border-slate-200 shrink-0">
+                      {(entry.overridden_rules || []).join(', ') || 'Policy override'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Value Breakdown */}
           <div className="border border-slate-200 rounded-lg p-4 bg-white space-y-2">

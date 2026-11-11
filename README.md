@@ -29,22 +29,22 @@ TimeTalk separates **probabilistic language understanding** from **deterministic
 ## Key UI & Product Features
 
 - **Single-Screen Executive Layout (`1440×900`):** Zero outer page scroll or horizontal table scroll, `#F7F8FA` / `#FFFFFF` surfaces, single `#2563EB` blue accent, `8px` radius, subtle borders, and `Inter` typography.
-  - **Header:** Logo, `Northwind Consulting (demo data)`, `Nothing submits without your approval` badge, `Team view` button, and Priya's avatar menu (`PS · Priya · ₹1,500/hr` with live rate selector).
+  - **Header:** Logo, `Northwind Consulting (demo data)`, `Seeded` / `Start empty` demo mode switch, `Nothing submits without your approval` badge, `Team view` button, and Priya's avatar menu (`PS · Priya · ₹1,500/hr` with live rate selector). In **Start empty** mode, load and `Reset` clear all rows and chat with no seeded entries.
   - **Left Column (`35%`):** Conversational copilot with wrapping `"Try:"` suggestion chips (`Log yesterday`, `Ambiguous project`, `Closed project`, `Flat 8h week`).
   - **Right Top:** 4 KPI cards (`Time saved`, `Disputed billing prevented`, `AI cost`, `Fully loaded ROI`) under `Cost vs value, live`, plus an expandable **Assumptions** drawer.
   - **Right Bottom:** Weekly timesheet grid with inline project/task/hours/billing editors (`project` selector displays code only, with project name in muted text underneath).
 - **Three Row States:**
   - **Draft** (grey): Validated draft ready to confirm.
-  - **Needs review** (amber): Full-width sub-row beneath the entry showing warning icon, single-line reason, and 1-click remediation (`Move to internal`, `Switch non-billable`, `Set to 8h`, `Remove duplicate`).
-  - **Confirmed** (green): Committed to the weekly timesheet store.
-- **Inline `"Why?"` Inspection:** Always visible on every row; expands directly beneath the row to show match explanation, raw input snippet, confidence `%`, tokens, and latency (`ms`).
+  - **Needs review** (amber): Full-width sub-row beneath the entry showing warning icon, single-line reason, and 1-click remediation (`Move to internal`, `Switch non-billable`, `Set to 8h`, `Remove duplicate`). Replaces standard confirm with **Confirm anyway**, which prompts for an override reason and logs the exception.
+  - **Confirmed** (green): Committed to the weekly timesheet store (with an `Override` tag if confirmed via **Confirm anyway**).
+- **Inline `"Why?"` Inspection:** Always visible on every row; expands directly beneath the row to show match explanation, raw input snippet, confidence `%`, tokens, latency (`ms`), and any logged override reason/rule.
 - **Single-Source-of-Truth Telemetry & Monthly ROI Projection (`frontend/src/store/metricsStore.jsx`):**
   - Main KPI cards and **Team view** read from one shared React store (`MetricsProvider`).
   - **Real per-token pricing (`₹`):** Computes token cost from model-specific input/output rates (`₹0.04` scale, formatted to 2 decimals).
   - **Disputed billing prevented:** Starts at `₹0` and increments only after the user resolves or discards a flagged anomaly.
   - **20-Day Monthly ROI Alignment:** Shows **Fully loaded ROI** (`(session value * 20) / (token cost * 20 + fully loaded monthly cost)`) as the headline KPI once `3+` entries are confirmed, and displays **Token ROI** inside **Assumptions** with the note `"Token cost is negligible; fully loaded cost is the real test."` (`Fully loaded cost` defaults to `₹40`/user/month and is editable).
 - **Team View (`AdminMacroModal.jsx`):**
-  - Displays identical session KPIs, **Value breakdown** (projected over 20 working days, with `Client billable value logged` tagged `Context, not counted in ROI`), CSV export, and a 7-consultant team table (`Priya Sharma` live + 6 seeded peers) tracking **Confirmed hours**, **Utilization**, **Edit rate**, **Same-day logging %**, and **Flat 8h pattern** flagging (identical daily hours, `>90%` on one project, `5+` days late).
+  - Displays identical session KPIs, **Value breakdown** (projected over 20 working days, with `Client billable value logged` tagged `Context, not counted in ROI`), session override logs, CSV export, and a 7-consultant team table (`Priya Sharma` live + 6 seeded peers) tracking **Confirmed hours**, **Utilization**, **Edit rate**, **Same-day logging %**, **Overrides**, and **Flat 8h pattern** flagging (identical daily hours, `>90%` on one project, `5+` days late).
 
 ---
 

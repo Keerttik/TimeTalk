@@ -47,7 +47,7 @@ export default function ChatInterface({
         {onResetSession && (
           <button
             type="button"
-            onClick={onResetSession}
+            onClick={() => onResetSession()}
             title="Reset demo session"
             className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-[#F7F8FA] border border-slate-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
           >
@@ -75,6 +75,15 @@ export default function ChatInterface({
 
       {/* Message Thread */}
       <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4">
+        {messages.length === 0 && !isLoading && (
+          <div className="h-full flex flex-col items-center justify-center text-center px-4 text-slate-400">
+            <Bot className="w-6 h-6 text-slate-300 mb-2" />
+            <p className="text-xs font-medium text-slate-600">Clean workspace ready</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Describe what you worked on below or pick a Try: prompt above.
+            </p>
+          </div>
+        )}
         {messages.map((msg, index) => {
           const isUser = msg.sender === 'user';
           return (

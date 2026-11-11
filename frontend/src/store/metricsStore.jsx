@@ -220,6 +220,7 @@ export function computeSharedMetrics({
   const editedCount = confirmedEntries.filter((e) => Boolean(e.user_edited)).length;
   const editRatePct =
     confirmedCount > 0 ? Math.round((editedCount / confirmedCount) * 1000) / 10 : 0;
+  const overrideCount = confirmedEntries.filter((e) => Boolean(e.is_override)).length;
 
   // Context only (not counted in ROI)
   const billingValueLoggedRupees = confirmedEntries.reduce((sum, e) => {
@@ -271,6 +272,7 @@ export function computeSharedMetrics({
     nonBillableHours: Math.round(nonBillableHours * 10) / 10,
     billableUtilizationPct,
     editRatePct,
+    overrideCount,
     billingValueLoggedRupees,
     timeSavedMinutes,
     valueOfTimeSavedRupees,
@@ -303,6 +305,8 @@ export function analyzeConsultantWeek(consultant) {
   const editedCount = entries.filter((e) => Boolean(e.user_edited)).length;
   const editRatePct =
     entries.length > 0 ? Math.round((editedCount / entries.length) * 1000) / 10 : 0;
+  const entryOverrides = entries.filter((e) => Boolean(e.is_override)).length;
+  const overrideCount = entryOverrides > 0 ? entryOverrides : Number(consultant.override_count) || 0;
 
   const sameDayCount = entries.filter((e) => (Number(e.days_late) || 0) === 0).length;
   const sameDayLoggingPct =
@@ -351,28 +355,57 @@ export function analyzeConsultantWeek(consultant) {
     confirmedHours: Math.round(confirmedHours * 10) / 10,
     utilizationPct,
     editRatePct,
+    overrideCount,
     sameDayLoggingPct,
     flat8hPattern,
     flat8hReason
   };
 }
 
+const DEMO_MODE_STORAGE_KEY = 'timetalk_demo_mode';
+
+export function getInitialDemoMode() {
+  if (typeof window === 'undefined') return 'seeded';
+  const params = new URLSearchParams(window.location.search);
+  const urlMode = params.get('demo') || params.get('mode');
+  if (urlMode === 'empty' || urlMode === 'start_empty') return 'empty';
+  if (urlMode === 'seeded') return 'seeded';
+  const saved = window.localStorage.getItem(DEMO_MODE_STORAGE_KEY);
+  return saved === 'empty' ? 'empty' : 'seeded';
+}
+
 const MetricsContext = createContext(null);
 
 export function MetricsProvider({ children }) {
-  const [messages, setMessages] = useState([INITIAL_GREETING_MESSAGE]);
-  const [draftEntries, setDraftEntries] = useState(INITIAL_SEED_DRAFTS);
+  const [demoMode, setDemoModeState] = useState(getInitialDemoMode);
+  const isStartEmpty = demoMode === 'empty';
+
+  const [messages, setMessages] = useState(() =>
+    isStartEmpty ? [] : [INITIAL_GREETING_MESSAGE]
+  );
+  const [draftEntries, setDraftEntries] = useState(() =>
+    isStartEmpty ? [] : INITIAL_SEED_DRAFTS
+  );
   const [confirmedEntries, setConfirmedEntries] = useState([]);
-  const [telemetryHistory, setTelemetryHistory] = useState(INITIAL_SEED_TELEMETRY);
+  const [telemetryHistory, setTelemetryHistory] = useState(() =>
+    isStartEmpty ? [] : INITIAL_SEED_TELEMETRY
+  );
   const [leakageCaughtRupees, setLeakageCaughtRupees] = useState(INITIAL_SEED_LEAKAGE_INR);
   const [hourlyRate, setHourlyRate] = useState(1500);
   const [fullyLoadedMonthlyCost, setFullyLoadedMonthlyCost] = useState(40);
-  const [chatSeconds, setChatSeconds] = useState(25);
+  const [chatSeconds, setChatSeconds] = useState(() => (isStartEmpty ? 0 : 25));
   const [isLoading, setIsLoading] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState(Date.now());
   const [conversationId] = useState(`conv_${Date.now()}`);
 
   useEffect(() => {
+    if (getInitialDemoMode() === 'empty') {
+      fetch('/api/timesheets/reset', { method: 'POST' }).catch((err) =>
+        console.log('Backend starting or unreachable:', err)
+      );
+      return;
+    }
+
     fetch('/api/timesheets')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -655,15 +688,31 @@ export function MetricsProvider({ children }) {
   );
 
   const confirmDraft = useCallback(
-    async (draft) => {
+    async (draft, overrideReason = '') => {
       syncActiveChatSeconds();
+      const trimmedReason = typeof overrideReason === 'string' ? overrideReason.trim() : '';
+      const hasAnomalies = Array.isArray(draft.anomalies) && draft.anomalies.length > 0;
+      const isOverride = Boolean(trimmedReason && hasAnomalies);
+      const overriddenRules = isOverride ? draft.anomalies.map((a) => a.rule_id) : [];
+      const overriddenMessages = isOverride ? draft.anomalies.map((a) => a.message) : [];
+      const overrideTimestamp = isOverride ? new Date().toISOString() : null;
+
+      const confirmPayloadEntry = {
+        ...draft,
+        is_override: isOverride,
+        override_reason: isOverride ? trimmedReason : null,
+        overridden_rules: overriddenRules,
+        overridden_messages: overriddenMessages,
+        override_timestamp: overrideTimestamp
+      };
+
       try {
         await fetch('/api/timesheets/confirm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: 'u_priya',
-            entries: [draft]
+            entries: [confirmPayloadEntry]
           })
         });
       } catch (e) {
@@ -674,7 +723,12 @@ export function MetricsProvider({ children }) {
         ...draft,
         status: 'confirmed',
         days_late: 0,
-        id: `conf_${draft.id}`
+        id: `conf_${draft.id}`,
+        is_override: isOverride,
+        override_reason: isOverride ? trimmedReason : null,
+        overridden_rules: overriddenRules,
+        overridden_messages: overriddenMessages,
+        override_timestamp: overrideTimestamp
       };
 
       const nextConfirmed = [...confirmedEntries, confirmedItem];
@@ -739,20 +793,46 @@ export function MetricsProvider({ children }) {
     );
   }, [draftEntries, confirmedEntries, syncActiveChatSeconds]);
 
-  const resetSession = useCallback(async () => {
-    try {
-      await fetch('/api/timesheets/reset', { method: 'POST' });
-    } catch (e) {
-      console.log('Reset store call error:', e);
-    }
-    setDraftEntries(INITIAL_SEED_DRAFTS);
-    setConfirmedEntries([]);
-    setTelemetryHistory(INITIAL_SEED_TELEMETRY);
-    setLeakageCaughtRupees(INITIAL_SEED_LEAKAGE_INR);
-    setSessionStartTime(Date.now());
-    setChatSeconds(25);
-    setMessages([INITIAL_GREETING_MESSAGE]);
-  }, []);
+  const resetSession = useCallback(
+    async (targetMode = demoMode) => {
+      const mode = targetMode === 'empty' ? 'empty' : 'seeded';
+      try {
+        await fetch('/api/timesheets/reset', { method: 'POST' });
+      } catch (e) {
+        console.log('Reset store call error:', e);
+      }
+      if (mode === 'empty') {
+        setDraftEntries([]);
+        setConfirmedEntries([]);
+        setTelemetryHistory([]);
+        setLeakageCaughtRupees(0);
+        setSessionStartTime(Date.now());
+        setChatSeconds(0);
+        setMessages([]);
+      } else {
+        setDraftEntries(INITIAL_SEED_DRAFTS);
+        setConfirmedEntries([]);
+        setTelemetryHistory(INITIAL_SEED_TELEMETRY);
+        setLeakageCaughtRupees(INITIAL_SEED_LEAKAGE_INR);
+        setSessionStartTime(Date.now());
+        setChatSeconds(25);
+        setMessages([INITIAL_GREETING_MESSAGE]);
+      }
+    },
+    [demoMode]
+  );
+
+  const setDemoMode = useCallback(
+    async (nextMode) => {
+      const normalized = nextMode === 'empty' ? 'empty' : 'seeded';
+      setDemoModeState(normalized);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(DEMO_MODE_STORAGE_KEY, normalized);
+      }
+      await resetSession(normalized);
+    },
+    [resetSession]
+  );
 
   const metrics = useMemo(
     () =>
@@ -786,6 +866,7 @@ export function MetricsProvider({ children }) {
         hours: e.hours,
         is_billable: e.is_billable,
         user_edited: e.user_edited,
+        is_override: e.is_override,
         days_late: e.days_late ?? 0
       }))
     });
@@ -793,7 +874,13 @@ export function MetricsProvider({ children }) {
     return [priyaLive, ...peers];
   }, [confirmedEntries]);
 
+  const overrideLogs = useMemo(
+    () => confirmedEntries.filter((e) => Boolean(e.is_override)),
+    [confirmedEntries]
+  );
+
   const value = {
+    demoMode,
     messages,
     draftEntries,
     confirmedEntries,
@@ -805,6 +892,8 @@ export function MetricsProvider({ children }) {
     isLoading,
     metrics,
     teamConsultants,
+    overrideLogs,
+    setDemoMode,
     setHourlyRate,
     setFullyLoadedMonthlyCost,
     sendMessage,

@@ -243,6 +243,11 @@ def confirm_timesheets(req: TimesheetConfirmRequest):
             "hours": float(item.hours),
             "is_billable": item.is_billable,
             "user_edited": item.user_edited,
+            "is_override": item.is_override,
+            "override_reason": item.override_reason,
+            "overridden_rules": item.overridden_rules or [],
+            "overridden_messages": item.overridden_messages or [],
+            "override_timestamp": item.override_timestamp,
             "status": "confirmed",
             "confirmed_at": datetime.now().isoformat()
         }
@@ -255,7 +260,12 @@ def confirm_timesheets(req: TimesheetConfirmRequest):
             task=entry_record["task"],
             hours=entry_record["hours"],
             is_billable=entry_record["is_billable"],
-            user_edited=entry_record["user_edited"]
+            user_edited=entry_record["user_edited"],
+            is_override=entry_record["is_override"],
+            override_reason=entry_record["override_reason"],
+            overridden_rules=entry_record["overridden_rules"],
+            overridden_messages=entry_record["overridden_messages"],
+            override_timestamp=entry_record["override_timestamp"]
         ))
         
     timesheets_data["confirmed_entries"] = confirmed

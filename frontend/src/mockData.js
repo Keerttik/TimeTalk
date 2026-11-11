@@ -140,6 +140,7 @@ export const TEAM_CONSULTANTS_SEED = [
     id: "u_vikram",
     name: "Vikram Nair",
     role: "Delivery Lead",
+    override_count: 1,
     entries: [
       { date: "2026-11-09", project_code: "ACME-WEB", hours: 8.0, is_billable: true, user_edited: false, days_late: 7 },
       { date: "2026-11-10", project_code: "ACME-WEB", hours: 8.0, is_billable: true, user_edited: false, days_late: 7 },
