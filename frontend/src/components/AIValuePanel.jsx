@@ -33,7 +33,7 @@ export default function AIValuePanel() {
         <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 flex flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-mono text-[11px] bg-[#F7F8FA] border border-slate-200 px-2.5 py-1 rounded-lg text-slate-800">
-              Fully loaded ROI = (Session value x 20 working days) / (Token cost x 20 + Fully loaded monthly cost)
+              Modeled ROI = (session value x 20) / (token cost x 20 + platform cost per user per month)
             </span>
             <div className="flex items-center gap-2 text-[11px] bg-[#F7F8FA] border border-slate-200 px-2.5 py-1 rounded-lg">
               <span className="text-slate-500">Token ROI:</span>
@@ -44,13 +44,18 @@ export default function AIValuePanel() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 text-[11px]">
-            <span className="text-slate-500 italic">
-              Token cost is negligible; fully loaded cost is the real test.
-            </span>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-slate-600">
+                Assumes session value and usage stay steady across 20 working days.
+              </span>
+              <span className="text-slate-500 italic">
+                Token cost is negligible; fully loaded cost is the real test.
+              </span>
+            </div>
 
             <div className="flex flex-wrap items-center gap-4">
               <label className="flex items-center gap-1.5 text-slate-600">
-                <span>Fully loaded cost (₹/user/mo):</span>
+                <span>Platform cost (₹/user/mo):</span>
                 <input
                   type="number"
                   min="0"
@@ -96,10 +101,10 @@ export default function AIValuePanel() {
           </div>
         </div>
 
-        {/* 2. Disputed billing prevented */}
+        {/* 2. Flagged value resolved */}
         <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-            <span>Disputed billing prevented</span>
+            <span>Flagged value resolved</span>
             <ShieldCheck className="w-4 h-4 text-blue-600" />
           </div>
           <div className="mt-2">
@@ -107,7 +112,7 @@ export default function AIValuePanel() {
               ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              {metrics.leakageCaughtRupees > 0 ? 'Resolved anomalies' : 'Resolve flagged rows'}
+              Value of flagged entries the user resolved.
             </div>
           </div>
         </div>
@@ -128,10 +133,10 @@ export default function AIValuePanel() {
           </div>
         </div>
 
-        {/* 4. ROI (Fully loaded ROI main number, 20-day monthly projection) */}
+        {/* 4. Modeled ROI */}
         <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-            <span>Fully loaded ROI</span>
+            <span>Modeled ROI</span>
             <TrendingUp className="w-4 h-4 text-blue-600" />
           </div>
           <div className="mt-2">
@@ -140,15 +145,15 @@ export default function AIValuePanel() {
                 <div className="text-xl font-bold text-blue-600 tracking-tight">
                   {formatRoi(metrics.fullyLoadedRoi)}
                 </div>
-                <div className="text-[11px] text-slate-500 mt-0.5 truncate">
-                  20d: ₹{Math.round(metrics.projectedMonthlyValueRupees).toLocaleString('en-IN')} / ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
+                <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                  Includes assumed platform cost. Illustrative, not measured.
                 </div>
               </>
             ) : (
               <>
                 <div className="text-base font-semibold text-slate-400 tracking-tight">Pending</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">
-                  Unlocks at 3 entries ({metrics.confirmedCount}/3)
+                <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                  Unlocks at 3 entries ({metrics.confirmedCount}/3). Includes assumed platform cost. Illustrative, not measured.
                 </div>
               </>
             )}

@@ -9,6 +9,7 @@ class AnomalyWarning(BaseModel):
 
 class Telemetry(BaseModel):
     model: str
+    provider: str = "Local parser"
     input_tokens: int
     output_tokens: int
     latency_ms: int
@@ -26,6 +27,8 @@ class DraftTimesheetEntry(BaseModel):
     confidence: float
     reasoning: str
     raw_input_snippet: str
+    provider: str = "Local parser"
+    estimate_tag: Optional[str] = None
     anomalies: List[AnomalyWarning] = []
     trace: Optional[Dict[str, Any]] = None
 
@@ -33,6 +36,9 @@ class ClarificationOption(BaseModel):
     label: str
     project_code: str
     task: Optional[str] = None
+    action: Optional[str] = None
+    hours: Optional[float] = None
+    raw_snippet: Optional[str] = None
 
 class ClarificationResolveRequest(BaseModel):
     conversation_id: str
@@ -43,6 +49,7 @@ class ClarificationResolveRequest(BaseModel):
     date: Optional[str] = "2026-11-10"
     is_billable: Optional[bool] = None
     raw_snippet: Optional[str] = None
+    action: Optional[str] = None
 
 class ChatParseRequest(BaseModel):
     conversation_id: str
@@ -77,10 +84,12 @@ class TimesheetConfirmItem(BaseModel):
 
 class TimesheetConfirmRequest(BaseModel):
     user_id: str = "u_priya"
+    request_id: Optional[str] = None
     entries: List[TimesheetConfirmItem]
 
 class TimesheetConfirmResponse(BaseModel):
     status: str = "committed"
+    request_id: Optional[str] = None
     count: int
     entries: List[TimesheetConfirmItem]
 

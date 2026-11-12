@@ -14,6 +14,8 @@ function TimeTalkWorkspace() {
     confirmedEntries,
     hourlyRate,
     isLoading,
+    confirmingIds,
+    isConfirmingAll,
     setDemoMode,
     setHourlyRate,
     sendMessage,
@@ -176,6 +178,8 @@ function TimeTalkWorkspace() {
             <TimesheetGrid
               draftEntries={draftEntries}
               confirmedEntries={confirmedEntries}
+              confirmingIds={confirmingIds}
+              isConfirmingAll={isConfirmingAll}
               onUpdateDraft={updateDraft}
               onResolveAnomalyFix={resolveAnomalyFix}
               onConfirmDraft={confirmDraft}
@@ -185,6 +189,10 @@ function TimeTalkWorkspace() {
           </div>
         </section>
       </main>
+
+      <footer className="shrink-0 bg-white border-t border-slate-200 px-6 py-1.5 text-[11px] text-slate-500 text-center">
+        Prototype with fictional Northwind Consulting data. Not connected to any real ERP, billing or identity system.
+      </footer>
 
       {showAdminModal && <AdminMacroModal onClose={() => setShowAdminModal(false)} />}
     </div>

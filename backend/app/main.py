@@ -91,7 +91,7 @@ def get_admin_metrics():
 
     return {
         "status": "success",
-        "sample_period": "Week 46 (Nov 9 – Nov 15, 2026)",
+        "sample_period": "Week 46 (Nov 9 - Nov 15, 2026)",
         "organization": "Northwind Consulting",
         "consultant_count": 1,
         "total_conversations": max(1, total_confirmed // 2 + 1),
@@ -116,7 +116,8 @@ def reset_timesheets():
     initial_data = {
         "user_id": "u_priya",
         "current_week_start": "2026-11-09",
-        "confirmed_entries": []
+        "confirmed_entries": [],
+        "processed_requests": {}
     }
     with open(TIMESHEETS_PATH, "w", encoding="utf-8") as f:
         json.dump(initial_data, f, indent=2)
@@ -135,6 +136,9 @@ def parse_chat_message(req: ChatParseRequest):
     elif draft_entries:
         total_hrs = sum(e["hours"] for e in draft_entries)
         assistant_msg = f"I've staged {len(draft_entries)} draft {'entry' if len(draft_entries) == 1 else 'entries'} ({total_hrs} hrs total) for your review. Please review and confirm below."
+        fallback_from = (draft_entries[0].get("trace") or {}).get("fallback_from")
+        if fallback_from:
+            assistant_msg += f" (Note: {fallback_from} was unavailable, so {telemetry.get('provider', 'Local parser')} handled this extraction.)"
     else:
         assistant_msg = "I couldn't detect any timesheet activities in that message. Try stating hours and project (e.g. 'Spent 3 hours on Acme design review yesterday')."
 
@@ -169,6 +173,133 @@ def resolve_clarification(req: ClarificationResolveRequest):
     
     timesheets_data = load_timesheets()
     confirmed = timesheets_data.get("confirmed_entries", [])
+    latency = max(int((time.time() - start_time) * 1000), 75)
+
+    if req.action == "enter_days":
+        return ChatParseResponse(
+            conversation_id=req.conversation_id,
+            status="success",
+            requires_clarification=False,
+            clarification_prompt=None,
+            clarification_options=None,
+            assistant_message="Got it. Tell me the hours per day (for example: 'Mon 8h, Tue 10h, Wed 6h on Globex') and I'll stage each day.",
+            draft_entries=[],
+            telemetry=Telemetry(
+                model="localllm-hybrid-v1",
+                provider="Local parser",
+                input_tokens=60,
+                output_tokens=30,
+                latency_ms=latency
+            )
+        )
+
+    if req.action == "weekly_estimate":
+        est_date = req.date or "2026-11-09"
+        existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == est_date)
+        anomalies = evaluate_anomalies(
+            date_str=est_date,
+            project=proj,
+            task=task,
+            hours=req.hours,
+            is_billable=is_billable,
+            existing_day_hours=existing_day_hours,
+            confirmed_entries=confirmed,
+            skip_daily_outlier=True
+        )
+        draft = DraftTimesheetEntry(
+            id=f"draft_{int(time.time()*1000)}_weekly_est",
+            date=est_date,
+            project_code=proj["code"],
+            project_name=proj["name"],
+            task=task,
+            hours=req.hours,
+            is_billable=is_billable,
+            status="draft",
+            user_edited=False,
+            confidence=0.94,
+            reasoning=f"Saved {req.hours}h on {proj['name']} ({proj['code']}) / {task} as a single weekly estimate.",
+            raw_input_snippet=req.raw_snippet or f"{req.hours} hours on {proj['name']} this week",
+            provider="Local parser",
+            estimate_tag="Estimated",
+            anomalies=anomalies,
+            trace={
+                "model": "localllm-hybrid-v1",
+                "provider": "Local parser",
+                "tokens": 180,
+                "latency_ms": latency
+            }
+        )
+        return ChatParseResponse(
+            conversation_id=req.conversation_id,
+            status="success",
+            requires_clarification=False,
+            assistant_message=f"Staged 1 weekly estimate row ({req.hours} hrs) for {proj['name']} ({proj['code']}).",
+            draft_entries=[draft],
+            telemetry=Telemetry(
+                model="localllm-hybrid-v1",
+                provider="Local parser",
+                input_tokens=120,
+                output_tokens=60,
+                latency_ms=latency
+            )
+        )
+
+    if req.action == "even_split":
+        week_dates = ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]
+        daily_hours = round(float(req.hours) / 5.0, 2)
+        split_drafts = []
+        base_ts = int(time.time() * 1000)
+        for idx, d_str in enumerate(week_dates):
+            existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == d_str)
+            anomalies = evaluate_anomalies(
+                date_str=d_str,
+                project=proj,
+                task=task,
+                hours=daily_hours,
+                is_billable=is_billable,
+                existing_day_hours=existing_day_hours,
+                confirmed_entries=confirmed
+            )
+            split_drafts.append(
+                DraftTimesheetEntry(
+                    id=f"draft_{base_ts}_split_{idx + 1}",
+                    date=d_str,
+                    project_code=proj["code"],
+                    project_name=proj["name"],
+                    task=task,
+                    hours=daily_hours,
+                    is_billable=is_billable,
+                    status="draft",
+                    user_edited=False,
+                    confidence=0.94,
+                    reasoning=f"Split {req.hours}h weekly total evenly across Mon-Fri ({daily_hours}h/day) for {proj['code']} / {task}.",
+                    raw_input_snippet=req.raw_snippet or f"{req.hours} hours on {proj['name']} this week",
+                    provider="Local parser",
+                    estimate_tag="Estimated: even split",
+                    anomalies=anomalies,
+                    trace={
+                        "model": "localllm-hybrid-v1",
+                        "provider": "Local parser",
+                        "tokens": 210,
+                        "latency_ms": latency
+                    }
+                )
+            )
+        return ChatParseResponse(
+            conversation_id=req.conversation_id,
+            status="success",
+            requires_clarification=False,
+            assistant_message=f"Staged 5 daily rows ({daily_hours} hrs/day) for {proj['name']} ({proj['code']}), tagged as Estimated: even split.",
+            draft_entries=split_drafts,
+            telemetry=Telemetry(
+                model="localllm-hybrid-v1",
+                provider="Local parser",
+                input_tokens=140,
+                output_tokens=120,
+                latency_ms=latency
+            )
+        )
+
     existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == req.date)
     
     anomalies = evaluate_anomalies(
@@ -180,8 +311,6 @@ def resolve_clarification(req: ClarificationResolveRequest):
         existing_day_hours=existing_day_hours,
         confirmed_entries=confirmed
     )
-    
-    latency = max(int((time.time() - start_time) * 1000), 75)
     
     draft = DraftTimesheetEntry(
         id=f"draft_{int(time.time()*1000)}_clarified",
@@ -196,9 +325,11 @@ def resolve_clarification(req: ClarificationResolveRequest):
         confidence=0.95,
         reasoning=f"User clarified project selection to {proj['name']} ({proj['code']}) / {task}",
         raw_input_snippet=req.raw_snippet or f"{req.hours} hours on {proj['name']}",
+        provider="Local parser",
         anomalies=anomalies,
         trace={
-            "model": "gemini-2.5-flash",
+            "model": "localllm-hybrid-v1",
+            "provider": "Local parser",
             "tokens": 195,
             "latency_ms": latency
         }
@@ -215,7 +346,8 @@ def resolve_clarification(req: ClarificationResolveRequest):
         assistant_message=assistant_msg,
         draft_entries=[draft],
         telemetry=Telemetry(
-            model="gemini-2.5-flash",
+            model="localllm-hybrid-v1",
+            provider="Local parser",
             input_tokens=180,
             output_tokens=75,
             latency_ms=latency
@@ -224,18 +356,34 @@ def resolve_clarification(req: ClarificationResolveRequest):
 
 @app.post("/api/timesheets/confirm", response_model=TimesheetConfirmResponse)
 def confirm_timesheets(req: TimesheetConfirmRequest):
-    # Commits confirmed entries to storage (FR7 invariant)
+    # Commits confirmed entries to storage (FR7 invariant) with request_id idempotency
     timesheets_data = load_timesheets()
     confirmed = timesheets_data.get("confirmed_entries", [])
-    
+    processed_requests = timesheets_data.get("processed_requests", {})
+
+    if req.request_id and req.request_id in processed_requests:
+        cached = processed_requests[req.request_id]
+        cached_entries = [TimesheetConfirmItem(**e) for e in cached.get("entries", [])]
+        return TimesheetConfirmResponse(
+            status="duplicate_ignored",
+            request_id=req.request_id,
+            count=len(cached_entries),
+            entries=cached_entries
+        )
+
+    existing_ids = {e.get("id") for e in confirmed if e.get("id")}
     catalogue = load_catalogue()
     projects_map = {p["code"]: p["name"] for p in catalogue.get("projects", [])}
     
     added_items = []
     for item in req.entries:
+        if item.id and item.id in existing_ids:
+            continue
         p_name = item.project_name or projects_map.get(item.project_code, item.project_code)
+        entry_id = item.id or f"entry_{int(datetime.now().timestamp()*1000)}"
+        existing_ids.add(entry_id)
         entry_record = {
-            "id": item.id or f"entry_{int(datetime.now().timestamp()*1000)}",
+            "id": entry_id,
             "date": item.date,
             "project_code": item.project_code,
             "project_name": p_name,
@@ -269,12 +417,19 @@ def confirm_timesheets(req: TimesheetConfirmRequest):
         ))
         
     timesheets_data["confirmed_entries"] = confirmed
+    if req.request_id:
+        processed_requests[req.request_id] = {
+            "committed_at": datetime.now().isoformat(),
+            "entries": [item.model_dump() for item in added_items]
+        }
+        timesheets_data["processed_requests"] = processed_requests
     
     with open(TIMESHEETS_PATH, "w", encoding="utf-8") as f:
         json.dump(timesheets_data, f, indent=2)
         
     return TimesheetConfirmResponse(
         status="committed",
+        request_id=req.request_id,
         count=len(added_items),
         entries=added_items
     )

@@ -16,6 +16,8 @@ import { MOCK_CATALOGUE } from '../mockData';
 export default function TimesheetGrid({
   draftEntries = [],
   confirmedEntries = [],
+  confirmingIds = [],
+  isConfirmingAll = false,
   onUpdateDraft,
   onResolveAnomalyFix,
   onConfirmDraft,
@@ -61,9 +63,19 @@ export default function TimesheetGrid({
   const totalDraftHours = draftEntries.reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
   const totalConfirmedHours = confirmedEntries.reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
 
+  const getExtractorProvider = (row) => {
+    const raw = row?.provider || row?.trace?.provider;
+    if (raw) return raw;
+    const model = row?.trace?.model || '';
+    if (model.includes('gemini')) return 'Gemini';
+    if (model.includes('local')) return 'Local parser';
+    return 'Groq';
+  };
+
   const renderInlineWhy = (row) => {
     const trace = row.trace || { model: 'openai/gpt-oss-20b', tokens: 280, latency_ms: 195 };
     const confidencePct = Math.round((row.confidence || 0.9) * 100);
+    const extractorProvider = getExtractorProvider(row);
     const overrideRulesText =
       Array.isArray(row.overridden_rules) && row.overridden_rules.length > 0
         ? row.overridden_rules.join(', ')
@@ -88,9 +100,12 @@ export default function TimesheetGrid({
                 )}
               </div>
 
-              <div className="flex items-center gap-2 shrink-0 text-[11px] text-slate-600">
+              <div className="flex flex-wrap items-center gap-2 shrink-0 text-[11px] text-slate-600">
                 <span className="px-2 py-0.5 rounded-lg bg-[#F7F8FA] border border-slate-200">
-                  Confidence: <strong className="text-slate-900">{confidencePct}%</strong>
+                  Extracted by: <strong className="text-slate-900">{extractorProvider}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-[#F7F8FA] border border-slate-200">
+                  Match score: <strong className="text-slate-900">{confidencePct}%</strong>
                 </span>
                 <span className="px-2 py-0.5 rounded-lg bg-[#F7F8FA] border border-slate-200">
                   Tokens: <strong className="text-slate-900">{trace.tokens ?? 'N/A'}</strong>
@@ -155,10 +170,11 @@ export default function TimesheetGrid({
             <button
               type="button"
               onClick={onConfirmAll}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+              disabled={isConfirmingAll}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
             >
               <CheckCheck className="w-3.5 h-3.5" />
-              <span>Confirm all ({cleanDraftCount})</span>
+              <span>{isConfirmingAll ? 'Confirming...' : `Confirm all (${cleanDraftCount})`}</span>
             </button>
           )}
         </div>
@@ -169,13 +185,13 @@ export default function TimesheetGrid({
         <table className="w-full table-fixed text-left border-collapse text-xs">
           <thead className="sticky top-0 z-10 bg-[#F7F8FA] border-b border-slate-200">
             <tr className="text-slate-500 font-semibold text-[11px] uppercase tracking-wider">
-              <th className="py-2.5 pl-4 pr-2 w-[96px]">Date</th>
-              <th className="py-2.5 px-2 w-[138px]">Project</th>
+              <th className="py-2.5 pl-4 pr-2 w-[92px]">Date</th>
+              <th className="py-2.5 px-2 w-[132px]">Project</th>
               <th className="py-2.5 px-2 w-[104px]">Task</th>
               <th className="py-2.5 px-2 w-[66px]">Hours</th>
               <th className="py-2.5 px-2 w-[96px]">Billing</th>
-              <th className="py-2.5 px-2 w-[116px]">Status</th>
-              <th className="py-2.5 pl-2 pr-4 w-[210px] text-right">Actions</th>
+              <th className="py-2.5 px-2 w-[132px]">Status</th>
+              <th className="py-2.5 pl-2 pr-4 w-[208px] text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -185,6 +201,8 @@ export default function TimesheetGrid({
               const availableTasks = selectedProject?.tasks || [draft.task];
               const needsReview = Array.isArray(draft.anomalies) && draft.anomalies.length > 0;
               const isExpanded = expandedWhyId === draft.id;
+              const isRowConfirming = confirmingIds.includes(draft.id) || isConfirmingAll;
+              const isFallbackParser = getExtractorProvider(draft) === 'Local parser';
 
               return (
                 <React.Fragment key={draft.id}>
@@ -283,9 +301,9 @@ export default function TimesheetGrid({
                       </button>
                     </td>
 
-                    {/* Row Status (Draft grey vs Needs review amber) */}
+                    {/* Row Status (Draft grey vs Needs review amber + optional Fallback parser / Estimate tags) */}
                     <td className="py-2.5 px-2 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
+                      <div className="flex flex-col items-start gap-1">
                         {needsReview ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-100 text-amber-800 px-2 py-0.5 rounded-lg border border-amber-200 whitespace-nowrap">
                             <AlertTriangle className="w-3 h-3 text-amber-700 shrink-0" />
@@ -295,6 +313,16 @@ export default function TimesheetGrid({
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 whitespace-nowrap">
                             <Clock className="w-3 h-3 text-slate-500 shrink-0" />
                             <span>Draft</span>
+                          </span>
+                        )}
+                        {isFallbackParser && (
+                          <span className="inline-flex items-center text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 whitespace-nowrap">
+                            Fallback parser
+                          </span>
+                        )}
+                        {draft.estimate_tag && (
+                          <span className="inline-flex items-center text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 whitespace-nowrap">
+                            {draft.estimate_tag}
                           </span>
                         )}
                       </div>
@@ -318,9 +346,10 @@ export default function TimesheetGrid({
                         {needsReview ? (
                           <button
                             type="button"
+                            disabled={isRowConfirming}
                             onClick={() => openOverridePrompt(draft.id)}
                             title="Override anomaly and confirm"
-                            className={`text-[11px] font-medium px-2 py-1 rounded-lg border transition cursor-pointer whitespace-nowrap shrink-0 ${
+                            className={`text-[11px] font-medium px-2 py-1 rounded-lg border transition cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0 ${
                               overrideDraftId === draft.id
                                 ? 'bg-amber-600 text-white border-amber-600'
                                 : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
@@ -331,9 +360,10 @@ export default function TimesheetGrid({
                         ) : (
                           <button
                             type="button"
+                            disabled={isRowConfirming}
                             onClick={() => onConfirmDraft(draft)}
                             title="Confirm entry"
-                            className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition cursor-pointer shrink-0"
+                            className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition cursor-pointer shrink-0"
                           >
                             <Check className="w-3.5 h-3.5" />
                           </button>
@@ -383,10 +413,10 @@ export default function TimesheetGrid({
                             />
                             <button
                               type="submit"
-                              disabled={!overrideReason.trim()}
+                              disabled={!overrideReason.trim() || isRowConfirming}
                               className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white text-[11px] font-medium rounded-lg transition cursor-pointer whitespace-nowrap shrink-0"
                             >
-                              Log &amp; confirm
+                              {isRowConfirming ? 'Confirming...' : 'Log & confirm'}
                             </button>
                             <button
                               type="button"
@@ -412,6 +442,7 @@ export default function TimesheetGrid({
             {/* Confirmed Rows (Green) */}
             {confirmedEntries.map((row) => {
               const isExpanded = expandedWhyId === row.id;
+              const isFallbackParser = getExtractorProvider(row) === 'Local parser';
               return (
                 <React.Fragment key={row.id}>
                   <tr className="bg-white hover:bg-[#F7F8FA] transition border-l-2 border-l-emerald-500">
@@ -447,6 +478,16 @@ export default function TimesheetGrid({
                             className="inline-flex items-center text-[10px] font-medium text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-lg border border-amber-200 whitespace-nowrap"
                           >
                             Override
+                          </span>
+                        )}
+                        {isFallbackParser && (
+                          <span className="inline-flex items-center text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 whitespace-nowrap">
+                            Fallback parser
+                          </span>
+                        )}
+                        {row.estimate_tag && (
+                          <span className="inline-flex items-center text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 whitespace-nowrap">
+                            {row.estimate_tag}
                           </span>
                         )}
                       </div>

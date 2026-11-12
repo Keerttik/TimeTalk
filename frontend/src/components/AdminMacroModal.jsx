@@ -16,13 +16,13 @@ export default function AdminMacroModal({ onClose }) {
       ['Section', 'Metric', 'Value'],
       ['Session KPIs', 'Time Saved (Minutes)', metrics.timeSavedMinutes.toFixed(1)],
       ['Session KPIs', 'Session Value (INR)', Math.round(metrics.totalValueRupees)],
-      ['Session KPIs', 'Disputed Billing Prevented (INR)', Math.round(metrics.leakageCaughtRupees)],
+      ['Session KPIs', 'Flagged Value Resolved (INR)', Math.round(metrics.leakageCaughtRupees)],
       ['Session KPIs', 'Policy Overrides (Session)', metrics.overrideCount],
       ['Session KPIs', 'Tokens', metrics.totalTokens],
       ['Session KPIs', 'AI Token Cost (INR)', metrics.aiCostRupees.toFixed(2)],
       ['Session KPIs', '20-Day Projected Value (INR)', Math.round(metrics.projectedMonthlyValueRupees)],
-      ['Session KPIs', '20-Day Fully Loaded Cost (INR)', metrics.fullyLoadedCostRupees.toFixed(2)],
-      ['Session KPIs', 'Fully Loaded ROI', metrics.canShowRoi ? formatRoi(metrics.fullyLoadedRoi) : 'Pending 3+ entries'],
+      ['Session KPIs', '20-Day Platform + Token Cost (INR)', metrics.fullyLoadedCostRupees.toFixed(2)],
+      ['Session KPIs', 'Modeled ROI', metrics.canShowRoi ? formatRoi(metrics.fullyLoadedRoi) : 'Pending 3+ entries'],
       ['Session KPIs', 'Token ROI (Reference)', metrics.canShowRoi ? formatRoi(metrics.tokenRoi) : 'Pending 3+ entries'],
       ['Session KPIs', 'Client Billable Value Logged (Context, not counted in ROI)', Math.round(metrics.billingValueLoggedRupees)],
       [],
@@ -88,12 +88,12 @@ export default function AdminMacroModal({ onClose }) {
             </div>
 
             <div className="p-4 bg-white border border-slate-200 rounded-lg">
-              <span className="text-xs font-medium text-slate-500">Disputed billing prevented</span>
+              <span className="text-xs font-medium text-slate-500">Flagged value resolved</span>
               <div className="text-xl font-bold text-slate-900 mt-1">
                 ₹{Math.round(metrics.leakageCaughtRupees).toLocaleString('en-IN')}
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                {metrics.leakageCaughtRupees > 0 ? 'Resolved anomalies' : 'Resolve flagged rows'}
+                Value of flagged entries the user resolved.
               </p>
             </div>
 
@@ -108,21 +108,21 @@ export default function AdminMacroModal({ onClose }) {
             </div>
 
             <div className="p-4 bg-white border border-slate-200 rounded-lg">
-              <span className="text-xs font-medium text-slate-500">Fully loaded ROI</span>
+              <span className="text-xs font-medium text-slate-500">Modeled ROI</span>
               {metrics.canShowRoi ? (
                 <>
                   <div className="text-xl font-bold text-blue-600 mt-1">
                     {formatRoi(metrics.fullyLoadedRoi)}
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                    20d: ₹{Math.round(metrics.projectedMonthlyValueRupees).toLocaleString('en-IN')} / ₹{metrics.fullyLoadedCostRupees.toFixed(2)}
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                    Includes assumed platform cost. Illustrative, not measured.
                   </p>
                 </>
               ) : (
                 <>
                   <div className="text-base font-semibold text-slate-400 mt-1">Pending</div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Unlocks at 3 entries ({metrics.confirmedCount}/3)
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                    Unlocks at 3 entries ({metrics.confirmedCount}/3). Includes assumed platform cost. Illustrative, not measured.
                   </p>
                 </>
               )}
@@ -302,9 +302,9 @@ export default function AdminMacroModal({ onClose }) {
 
               <div className="py-2 flex items-center justify-between">
                 <div>
-                  <span className="font-medium text-slate-900">Disputed billing prevented (session / 20d projected)</span>
+                  <span className="font-medium text-slate-900">Flagged value resolved (session / 20d projected)</span>
                   <p className="text-[11px] text-slate-500">
-                    Invalid billing resolved before submission
+                    Value of flagged entries the user resolved.
                   </p>
                 </div>
                 <span className="font-semibold text-slate-900">

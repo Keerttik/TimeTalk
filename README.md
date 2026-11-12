@@ -31,18 +31,19 @@ TimeTalk separates **probabilistic language understanding** from **deterministic
 - **Single-Screen Executive Layout (`1440×900`):** Zero outer page scroll or horizontal table scroll, `#F7F8FA` / `#FFFFFF` surfaces, single `#2563EB` blue accent, `8px` radius, subtle borders, and `Inter` typography.
   - **Header:** Logo, `Northwind Consulting (demo data)`, `Seeded` / `Start empty` demo mode switch, `Nothing submits without your approval` badge, `Team view` button, and Priya's avatar menu (`PS · Priya · ₹1,500/hr` with live rate selector). In **Start empty** mode, load and `Reset` clear all rows and chat with no seeded entries.
   - **Left Column (`35%`):** Conversational copilot with wrapping `"Try:"` suggestion chips (`Log yesterday`, `Ambiguous project`, `Closed project`, `Flat 8h week`).
-  - **Right Top:** 4 KPI cards (`Time saved`, `Disputed billing prevented`, `AI cost`, `Fully loaded ROI`) under `Cost vs value, live`, plus an expandable **Assumptions** drawer.
+  - **Right Top:** 4 KPI cards (`Time saved`, `Flagged value resolved`, `AI cost`, `Modeled ROI`) under `Cost vs value, live`, plus an expandable **Assumptions** drawer.
   - **Right Bottom:** Weekly timesheet grid with inline project/task/hours/billing editors (`project` selector displays code only, with project name in muted text underneath).
 - **Three Row States:**
   - **Draft** (grey): Validated draft ready to confirm.
   - **Needs review** (amber): Full-width sub-row beneath the entry showing warning icon, single-line reason, and 1-click remediation (`Move to internal`, `Switch non-billable`, `Set to 8h`, `Remove duplicate`). Replaces standard confirm with **Confirm anyway**, which prompts for an override reason and logs the exception.
   - **Confirmed** (green): Committed to the weekly timesheet store (with an `Override` tag if confirmed via **Confirm anyway**).
-- **Inline `"Why?"` Inspection:** Always visible on every row; expands directly beneath the row to show match explanation, raw input snippet, confidence `%`, tokens, latency (`ms`), and any logged override reason/rule.
+- **Provider Transparency & Inline `"Why?"` Inspection:** Always visible on every row; expands directly beneath the row to show match explanation, raw input snippet, `Extracted by:` (`Groq`, `Gemini`, or `Local parser`), `Match score`, tokens, latency (`ms`), and any logged override reason/rule. Rows handled by the local fallback display a grey `Fallback parser` badge.
 - **Single-Source-of-Truth Telemetry & Monthly ROI Projection (`frontend/src/store/metricsStore.jsx`):**
   - Main KPI cards and **Team view** read from one shared React store (`MetricsProvider`).
   - **Real per-token pricing (`₹`):** Computes token cost from model-specific input/output rates (`₹0.04` scale, formatted to 2 decimals).
-  - **Disputed billing prevented:** Starts at `₹0` and increments only after the user resolves or discards a flagged anomaly.
-  - **20-Day Monthly ROI Alignment:** Shows **Fully loaded ROI** (`(session value * 20) / (token cost * 20 + fully loaded monthly cost)`) as the headline KPI once `3+` entries are confirmed, and displays **Token ROI** inside **Assumptions** with the note `"Token cost is negligible; fully loaded cost is the real test."` (`Fully loaded cost` defaults to `₹40`/user/month and is editable).
+  - **Flagged value resolved:** Starts at `₹0` and increments only after the user resolves or discards a flagged anomaly.
+  - **20-Day Monthly ROI Alignment:** Shows **Modeled ROI** (`(session value * 20) / (token cost * 20 + platform cost per user per month)`) as the headline KPI once `3+` entries are confirmed, with the subtitle `"Includes assumed platform cost. Illustrative, not measured."`, and displays **Token ROI** inside **Assumptions** alongside `"Assumes session value and usage stay steady across 20 working days."` and `"Token cost is negligible; fully loaded cost is the real test."` (`Platform cost` defaults to `₹40`/user/month and is editable).
+- **Idempotent Confirmations:** Confirm requests carry a unique `request_id` and disable confirm buttons while in flight so double-clicks or retries never create duplicate timesheet rows.
 - **Team View (`AdminMacroModal.jsx`):**
   - Displays identical session KPIs, **Value breakdown** (projected over 20 working days, with `Client billable value logged` tagged `Context, not counted in ROI`), session override logs, CSV export, and a 7-consultant team table (`Priya Sharma` live + 6 seeded peers) tracking **Confirmed hours**, **Utilization**, **Edit rate**, **Same-day logging %**, **Overrides**, and **Flat 8h pattern** flagging (identical daily hours, `>90%` on one project, `5+` days late).
 
@@ -135,15 +136,15 @@ npm run dev
 ## Demo Walkthrough
 
 On initial load, TimeTalk seeds two draft rows so key guardrails and ROI mechanics are immediately visible:
-- **Row 1 (`Needs review`, amber):** `4h` on `INITECH-AUD` (`Fieldwork`) flagged as closed on Oct 31; resolving it via **Move to internal** credits `₹12,000` into **Disputed billing prevented**.
+- **Row 1 (`Needs review`, amber):** `4h` on `INITECH-AUD` (`Fieldwork`) flagged as closed on Oct 31; resolving it via **Move to internal** credits `₹12,000` into **Flagged value resolved**.
 - **Row 2 (`Draft`, grey):** `3h` on `ACME-WEB` (`Design`).
 
 From there, use the `"Try:"` chips or type freely:
 1. **`Log yesterday`:** Parses a compound sentence into `ACME-WEB (Design)` and `INT-OPS (Standup)` on yesterday's date.
 2. **`Ambiguous project`:** Prompts *"Did you work on Acme Website (ACME-WEB) or Acme Mobile (ACME-MOB)?"* with clickable chips instead of guessing.
 3. **`Closed project`:** Demonstrates `INITECH-AUD` policy blocking and 1-click **Move to internal**.
-4. **`Flat 8h week`:** Stages 5 Mon-Fri `8h` rows for `GLOBEX-DATA`; confirming `3+` clean entries unlocks **Fully loaded ROI** (20-day projection) and **Token ROI** inside Assumptions.
-5. **Inline `Why?` & `Team view`:** Expand any row's match rationale/tokens/latency inline, then open **Team view** to compare live session KPIs and inspect the 2 flagged `Flat 8h pattern` consultants.
+4. **`Flat 8h week`:** Sends `"40 hours on Globex data migration this week."` without a daily split, prompting `"Roughly how was that split across the week?"` with **Same every day** (`Estimated: even split`), **Let me enter days**, and **Save as weekly estimate** (`Estimated`). Confirming `3+` clean entries unlocks **Modeled ROI** and **Token ROI**.
+5. **Inline `Why?` & `Team view`:** Expand any row's extractor provider, match score, tokens, and latency inline, then open **Team view** to compare live session KPIs and inspect the 2 flagged `Flat 8h pattern` consultants.
 
 ---
 

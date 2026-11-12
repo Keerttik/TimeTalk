@@ -93,6 +93,36 @@ def _infer_hints(text_lower: str) -> Tuple[str, str]:
     return project_hint, task_hint
 
 
+def detect_unsplit_weekly_catchup(text: str) -> Optional[float]:
+    """
+    Detect sentences covering multiple days/a week without a daily split
+    (e.g. '40 hours on Globex this week'). Returns total hours if detected, else None.
+    """
+    text_lower = text.lower()
+    has_week_span = bool(
+        re.search(
+            r"\b(?:this\s+week|for\s+the\s+week|over\s+the\s+week|all\s+week|entire\s+week|whole\s+week|monday\s+(?:to|through|-|–)\s+friday|mon\s*(?:-|to)\s*fri)\b",
+            text_lower,
+        )
+    )
+    if not has_week_span:
+        return None
+
+    has_daily_split = bool(
+        re.search(
+            r"\b(?:a\s+day|per\s+day|each\s+day|every\s+day|daily|/\s*day)\b",
+            text_lower,
+        )
+    )
+    if has_daily_split:
+        return None
+
+    hour_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h\b)", text, re.IGNORECASE)
+    if not hour_match:
+        return None
+    return float(hour_match.group(1))
+
+
 def rule_based_fallback_parser(text: str, ref_date: datetime) -> List[Dict[str, Any]]:
     """Deterministic NLP extractor that reliably splits compound sentences and extracts activities."""
     text_lower = text.lower()
@@ -389,22 +419,87 @@ def extract_timesheet_drafts(
     llm_output: Optional[Dict[str, Any]] = None
     llm_usage: Optional[Dict[str, int]] = None
     model_name = "localllm-hybrid-v1"
+    provider_label = "Local parser"
+    attempted_providers: List[str] = []
+
+    # Check multi-day/weekly catch-up without an explicit daily split before spreading hours
+    weekly_total_hours = detect_unsplit_weekly_catchup(user_message)
+    if weekly_total_hours is not None:
+        project_hint, task_hint = _infer_hints(user_message.lower())
+        match_result = match_activity_to_catalogue(
+            raw_snippet=user_message,
+            project_hint=project_hint,
+            task_hint=task_hint,
+        )
+        if not match_result.get("is_ambiguous") and match_result.get("matched_project"):
+            proj = match_result["matched_project"]
+            task = match_result["matched_task"]
+            latency_ms = max(int((time.time() - start_time) * 1000), 85)
+            return (
+                [],
+                {
+                    "model": "localllm-hybrid-v1",
+                    "provider": "Local parser",
+                    "input_tokens": len(user_message.split()) * 4 + 120,
+                    "output_tokens": 45,
+                    "latency_ms": latency_ms,
+                },
+                True,
+                "Roughly how was that split across the week?",
+                [
+                    {
+                        "label": "Same every day",
+                        "action": "even_split",
+                        "project_code": proj["code"],
+                        "task": task,
+                        "hours": weekly_total_hours,
+                        "raw_snippet": user_message,
+                    },
+                    {
+                        "label": "Let me enter days",
+                        "action": "enter_days",
+                        "project_code": proj["code"],
+                        "task": task,
+                        "hours": weekly_total_hours,
+                        "raw_snippet": user_message,
+                    },
+                    {
+                        "label": "Save as weekly estimate",
+                        "action": "weekly_estimate",
+                        "project_code": proj["code"],
+                        "task": task,
+                        "hours": weekly_total_hours,
+                        "raw_snippet": user_message,
+                    },
+                ],
+            )
 
     # Prefer Groq when configured (fast, generous free tier), then Gemini, then local fallback
     if os.getenv("GROQ_API_KEY") or GROQ_API_KEY:
+        attempted_providers.append("Groq")
         llm_output, llm_usage = call_groq_api(user_message, catalogue_summary, ref_date_iso)
         if llm_output:
             model_name = GROQ_MODEL
+            provider_label = "Groq"
 
     if not llm_output and (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or GEMINI_API_KEY):
+        attempted_providers.append("Gemini")
         llm_output, llm_usage = call_gemini_api(user_message, catalogue_summary, ref_date_iso)
         if llm_output:
             model_name = "gemini-2.5-flash"
+            provider_label = "Gemini"
 
     if llm_output and "activities" in llm_output:
         raw_activities = llm_output["activities"]
     else:
         raw_activities = rule_based_fallback_parser(user_message, ref_date)
+        provider_label = "Local parser"
+
+    fallback_from = (
+        attempted_providers[0]
+        if attempted_providers and attempted_providers[0] != provider_label
+        else None
+    )
         
     draft_entries = []
     requires_clarification = False
@@ -478,9 +573,12 @@ def extract_timesheet_drafts(
             "confidence": confidence,
             "reasoning": reasoning,
             "raw_input_snippet": raw_snippet,
+            "provider": provider_label,
             "anomalies": anomalies,
             "trace": {
                 "model": model_name,
+                "provider": provider_label,
+                "fallback_from": fallback_from,
                 "tokens": trace_tokens,
                 "latency_ms": max(latency_ms, 85)
             }
@@ -500,6 +598,7 @@ def extract_timesheet_drafts(
 
     telemetry = {
         "model": model_name,
+        "provider": provider_label,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "latency_ms": latency_total_ms

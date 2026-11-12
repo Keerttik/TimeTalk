@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { MOCK_CATALOGUE, TEAM_CONSULTANTS_SEED } from '../mockData';
 
 // Real per-1M-token model pricing in INR (USD * 85)
@@ -34,6 +34,7 @@ export const INITIAL_SEED_DRAFTS = [
     confidence: 0.95,
     reasoning: 'Matched "Initech fieldwork" to INITECH-AUD / Fieldwork from Northwind catalogue.',
     raw_input_snippet: '4 hours on Initech fieldwork today, billable.',
+    provider: 'Groq',
     anomalies: [
       {
         rule_id: 'CLOSED_PROJECT',
@@ -47,6 +48,7 @@ export const INITIAL_SEED_DRAFTS = [
     ],
     trace: {
       model: 'openai/gpt-oss-20b',
+      provider: 'Groq',
       tokens: 1120,
       latency_ms: 410
     }
@@ -64,9 +66,11 @@ export const INITIAL_SEED_DRAFTS = [
     confidence: 0.92,
     reasoning: 'Matched "Acme design review" to ACME-WEB / Design.',
     raw_input_snippet: '3 hours on Acme design review yesterday.',
+    provider: 'Groq',
     anomalies: [],
     trace: {
       model: 'openai/gpt-oss-20b',
+      provider: 'Groq',
       tokens: 1072,
       latency_ms: 380
     }
@@ -395,8 +399,19 @@ export function MetricsProvider({ children }) {
   const [fullyLoadedMonthlyCost, setFullyLoadedMonthlyCost] = useState(40);
   const [chatSeconds, setChatSeconds] = useState(() => (isStartEmpty ? 0 : 25));
   const [isLoading, setIsLoading] = useState(false);
+  const [confirmingIds, setConfirmingIds] = useState([]);
+  const [isConfirmingAll, setIsConfirmingAll] = useState(false);
+  const confirmInFlightRef = useRef(new Set());
+  const confirmAllInFlightRef = useRef(false);
   const [sessionStartTime, setSessionStartTime] = useState(Date.now());
   const [conversationId] = useState(`conv_${Date.now()}`);
+
+  const createRequestId = useCallback(() => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }, []);
 
   useEffect(() => {
     if (getInitialDemoMode() === 'empty') {
@@ -504,9 +519,10 @@ export function MetricsProvider({ children }) {
             user_id: 'u_priya',
             project_code: option.project_code,
             task: option.task || 'Development',
-            hours: 2.0,
-            date: '2026-11-10',
-            raw_snippet: `2 hours on ${option.label}`
+            hours: option.hours ?? 2.0,
+            date: option.action === 'weekly_estimate' ? '2026-11-09' : '2026-11-10',
+            raw_snippet: option.raw_snippet || `2 hours on ${option.label}`,
+            action: option.action || null
           })
         });
 
@@ -689,58 +705,69 @@ export function MetricsProvider({ children }) {
 
   const confirmDraft = useCallback(
     async (draft, overrideReason = '') => {
+      if (!draft || confirmInFlightRef.current.has(draft.id)) return;
+      confirmInFlightRef.current.add(draft.id);
+      setConfirmingIds((prev) => (prev.includes(draft.id) ? prev : [...prev, draft.id]));
       syncActiveChatSeconds();
-      const trimmedReason = typeof overrideReason === 'string' ? overrideReason.trim() : '';
-      const hasAnomalies = Array.isArray(draft.anomalies) && draft.anomalies.length > 0;
-      const isOverride = Boolean(trimmedReason && hasAnomalies);
-      const overriddenRules = isOverride ? draft.anomalies.map((a) => a.rule_id) : [];
-      const overriddenMessages = isOverride ? draft.anomalies.map((a) => a.message) : [];
-      const overrideTimestamp = isOverride ? new Date().toISOString() : null;
-
-      const confirmPayloadEntry = {
-        ...draft,
-        is_override: isOverride,
-        override_reason: isOverride ? trimmedReason : null,
-        overridden_rules: overriddenRules,
-        overridden_messages: overriddenMessages,
-        override_timestamp: overrideTimestamp
-      };
 
       try {
-        await fetch('/api/timesheets/confirm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: 'u_priya',
-            entries: [confirmPayloadEntry]
-          })
-        });
-      } catch (e) {
-        console.warn('Confirm persistence error, committing locally:', e);
+        const trimmedReason = typeof overrideReason === 'string' ? overrideReason.trim() : '';
+        const hasAnomalies = Array.isArray(draft.anomalies) && draft.anomalies.length > 0;
+        const isOverride = Boolean(trimmedReason && hasAnomalies);
+        const overriddenRules = isOverride ? draft.anomalies.map((a) => a.rule_id) : [];
+        const overriddenMessages = isOverride ? draft.anomalies.map((a) => a.message) : [];
+        const overrideTimestamp = isOverride ? new Date().toISOString() : null;
+        const requestId = createRequestId();
+
+        const confirmPayloadEntry = {
+          ...draft,
+          is_override: isOverride,
+          override_reason: isOverride ? trimmedReason : null,
+          overridden_rules: overriddenRules,
+          overridden_messages: overriddenMessages,
+          override_timestamp: overrideTimestamp
+        };
+
+        try {
+          await fetch('/api/timesheets/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: 'u_priya',
+              request_id: requestId,
+              entries: [confirmPayloadEntry]
+            })
+          });
+        } catch (e) {
+          console.warn('Confirm persistence error, committing locally:', e);
+        }
+
+        const confirmedItem = {
+          ...draft,
+          status: 'confirmed',
+          days_late: 0,
+          id: `conf_${draft.id}`,
+          is_override: isOverride,
+          override_reason: isOverride ? trimmedReason : null,
+          overridden_rules: overriddenRules,
+          overridden_messages: overriddenMessages,
+          override_timestamp: overrideTimestamp
+        };
+
+        const nextConfirmed = [...confirmedEntries, confirmedItem];
+        setConfirmedEntries(nextConfirmed);
+        setDraftEntries((prev) =>
+          reconcileDraftDuplicates(
+            prev.filter((d) => d.id !== draft.id),
+            nextConfirmed
+          )
+        );
+      } finally {
+        confirmInFlightRef.current.delete(draft.id);
+        setConfirmingIds((prev) => prev.filter((id) => id !== draft.id));
       }
-
-      const confirmedItem = {
-        ...draft,
-        status: 'confirmed',
-        days_late: 0,
-        id: `conf_${draft.id}`,
-        is_override: isOverride,
-        override_reason: isOverride ? trimmedReason : null,
-        overridden_rules: overriddenRules,
-        overridden_messages: overriddenMessages,
-        override_timestamp: overrideTimestamp
-      };
-
-      const nextConfirmed = [...confirmedEntries, confirmedItem];
-      setConfirmedEntries(nextConfirmed);
-      setDraftEntries((prev) =>
-        reconcileDraftDuplicates(
-          prev.filter((d) => d.id !== draft.id),
-          nextConfirmed
-        )
-      );
     },
-    [confirmedEntries, syncActiveChatSeconds]
+    [confirmedEntries, createRequestId, syncActiveChatSeconds]
   );
 
   const discardDraft = useCallback((id) => {
@@ -756,42 +783,53 @@ export function MetricsProvider({ children }) {
 
   // Confirm ONLY clean Draft rows (zero anomalies); Needs review rows require individual resolution
   const confirmAll = useCallback(async () => {
+    if (confirmAllInFlightRef.current) return;
     const cleanDrafts = draftEntries.filter(
       (d) => !d.anomalies || d.anomalies.length === 0
     );
     if (cleanDrafts.length === 0) return;
+
+    confirmAllInFlightRef.current = true;
+    setIsConfirmingAll(true);
     syncActiveChatSeconds();
 
     try {
-      await fetch('/api/timesheets/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: 'u_priya',
-          entries: cleanDrafts
-        })
-      });
-    } catch (e) {
-      console.warn('Confirm all persistence error, committing locally:', e);
+      const requestId = createRequestId();
+      try {
+        await fetch('/api/timesheets/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: 'u_priya',
+            request_id: requestId,
+            entries: cleanDrafts
+          })
+        });
+      } catch (e) {
+        console.warn('Confirm all persistence error, committing locally:', e);
+      }
+
+      const cleanIds = new Set(cleanDrafts.map((d) => d.id));
+      const newlyConfirmed = cleanDrafts.map((d) => ({
+        ...d,
+        status: 'confirmed',
+        days_late: 0,
+        id: `conf_${d.id}`
+      }));
+
+      const nextConfirmed = [...confirmedEntries, ...newlyConfirmed];
+      setConfirmedEntries(nextConfirmed);
+      setDraftEntries((prev) =>
+        reconcileDraftDuplicates(
+          prev.filter((d) => !cleanIds.has(d.id)),
+          nextConfirmed
+        )
+      );
+    } finally {
+      confirmAllInFlightRef.current = false;
+      setIsConfirmingAll(false);
     }
-
-    const cleanIds = new Set(cleanDrafts.map((d) => d.id));
-    const newlyConfirmed = cleanDrafts.map((d) => ({
-      ...d,
-      status: 'confirmed',
-      days_late: 0,
-      id: `conf_${d.id}`
-    }));
-
-    const nextConfirmed = [...confirmedEntries, ...newlyConfirmed];
-    setConfirmedEntries(nextConfirmed);
-    setDraftEntries((prev) =>
-      reconcileDraftDuplicates(
-        prev.filter((d) => !cleanIds.has(d.id)),
-        nextConfirmed
-      )
-    );
-  }, [draftEntries, confirmedEntries, syncActiveChatSeconds]);
+  }, [draftEntries, confirmedEntries, createRequestId, syncActiveChatSeconds]);
 
   const resetSession = useCallback(
     async (targetMode = demoMode) => {
@@ -890,6 +928,8 @@ export function MetricsProvider({ children }) {
     fullyLoadedMonthlyCost,
     chatSeconds,
     isLoading,
+    confirmingIds,
+    isConfirmingAll,
     metrics,
     teamConsultants,
     overrideLogs,

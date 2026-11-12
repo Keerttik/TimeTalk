@@ -23,7 +23,8 @@ def evaluate_anomalies(
     hours: float,
     is_billable: bool,
     existing_day_hours: float = 0.0,
-    confirmed_entries: Optional[List[Dict[str, Any]]] = None
+    confirmed_entries: Optional[List[Dict[str, Any]]] = None,
+    skip_daily_outlier: bool = False
 ) -> List[Dict[str, Any]]:
     anomalies = []
     baseline = load_baseline()
@@ -101,7 +102,7 @@ def evaluate_anomalies(
     threshold = stats.get("unusual_hours_threshold", 10.4)
     
     total_day_hours = existing_day_hours + hours
-    if total_day_hours > threshold:
+    if not skip_daily_outlier and total_day_hours > threshold:
         anomalies.append({
             "rule_id": "UNUSUAL_HOURS",
             "severity": "warning",

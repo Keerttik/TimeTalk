@@ -91,7 +91,7 @@ export const QUICK_PROMPTS = [
   {
     id: "flat_8h_week",
     label: "Flat 8h week",
-    text: "8 hours a day on Globex data migration from Monday to Friday."
+    text: "40 hours on Globex data migration this week."
   }
 ];
 
