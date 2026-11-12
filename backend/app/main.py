@@ -14,11 +14,13 @@ from .models.schemas import (
     ClarificationResolveRequest,
     TimesheetConfirmRequest,
     TimesheetConfirmResponse,
-    TimesheetConfirmItem
+    TimesheetConfirmItem,
+    ReconstructionPlanRequest
 )
 from .engine.extractor import extract_timesheet_drafts
 from .engine.matcher import load_catalogue
 from .engine.anomalies import load_baseline, load_timesheets, evaluate_anomalies, TIMESHEETS_PATH
+from .engine.calendar_hints import get_calendar_hints_for_date, compute_provenance
 
 app = FastAPI(
     title="TimeTalk API",
@@ -54,6 +56,144 @@ def get_baseline():
 @app.get("/api/timesheets")
 def get_timesheets():
     return load_timesheets()
+
+@app.get("/api/calendar/hints")
+def get_calendar_hints(date: str, use_calendar_hints: bool = False):
+    """
+    Return non-private linked calendar hints for a date when opted in.
+    Private events ('Busy') are never returned.
+    """
+    return {
+        "date": date,
+        "use_calendar_hints": use_calendar_hints,
+        "hints": get_calendar_hints_for_date(
+            date_str=date,
+            use_calendar_hints=use_calendar_hints,
+            linked_only=True,
+        ),
+    }
+
+@app.post("/api/reconstruction/plan")
+def plan_reconstruction(req: ReconstructionPlanRequest):
+    """
+    Detect working days in the selected week with no entries and return up to 3
+    suggestion chips per missing day plus 'Not sure'. Never creates entries automatically.
+    """
+    timesheets_data = load_timesheets()
+    confirmed = timesheets_data.get("confirmed_entries", [])
+    existing_set = set(req.existing_dates or [])
+    for e in confirmed:
+        if e.get("date"):
+            existing_set.add(e["date"])
+
+    week_dates = req.week_dates or [
+        "2026-11-02",
+        "2026-11-03",
+        "2026-11-04",
+        "2026-11-05",
+        "2026-11-06",
+    ]
+    missing_dates = [d for d in week_dates if d not in existing_set]
+
+    catalogue = load_catalogue()
+    active_projects = [p for p in catalogue.get("projects", []) if p.get("status") != "closed"]
+
+    # Build up to 2 fallback suggestions from previous entries, then active catalogue
+    prev_suggestions: List[Dict[str, Any]] = []
+    seen_prev = set()
+    for e in reversed(confirmed):
+        key = (e.get("project_code"), e.get("task"))
+        if key not in seen_prev and e.get("project_code"):
+            seen_prev.add(key)
+            prev_suggestions.append(
+                {
+                    "label": f"{e['project_code']} · {e.get('task', 'General')} ({e.get('hours', 8)}h)",
+                    "project_code": e["project_code"],
+                    "task": e.get("task", "General"),
+                    "hours": float(e.get("hours") or 8.0),
+                    "source": "previous_entry",
+                    "label_tag": "From previous entries",
+                }
+            )
+    for p in active_projects:
+        task_name = p["tasks"][0] if p.get("tasks") else "General"
+        key = (p["code"], task_name)
+        if key not in seen_prev:
+            seen_prev.add(key)
+            prev_suggestions.append(
+                {
+                    "label": f"{p['code']} · {task_name} (8h)",
+                    "project_code": p["code"],
+                    "task": task_name,
+                    "hours": 8.0,
+                    "source": "catalogue",
+                    "label_tag": "Active project",
+                }
+            )
+
+    days_plan = []
+    for d_str in missing_dates:
+        try:
+            dt = datetime.strptime(d_str, "%Y-%m-%d")
+            day_label = dt.strftime("%A, %b ") + str(dt.day)
+        except Exception:
+            day_label = d_str
+
+        cal_hints = get_calendar_hints_for_date(
+            date_str=d_str,
+            use_calendar_hints=req.use_calendar_hints,
+            linked_only=True,
+        )
+        day_suggestions: List[Dict[str, Any]] = []
+        used_keys = set()
+
+        for h in cal_hints:
+            if len(day_suggestions) >= 3:
+                break
+            key = (h["project_code"], h["task"])
+            used_keys.add(key)
+            day_suggestions.append(
+                {
+                    "label": f"{h['title']} ({h['project_code']}, {h['duration_hours']}h)",
+                    "project_code": h["project_code"],
+                    "task": h["task"],
+                    "hours": h["duration_hours"],
+                    "source": "calendar_hint",
+                    "label_tag": "From calendar, suggestion only",
+                    "calendar_title": h["title"],
+                }
+            )
+
+        for ps in prev_suggestions:
+            if len(day_suggestions) >= 3:
+                break
+            key = (ps["project_code"], ps["task"])
+            if key not in used_keys:
+                used_keys.add(key)
+                day_suggestions.append(ps)
+
+        days_plan.append(
+            {
+                "date": d_str,
+                "day_label": day_label,
+                "prompt": f"{day_label}: what did you mostly work on?",
+                "suggestions": day_suggestions[:3],
+                "not_sure_option": {
+                    "label": "Not sure",
+                    "action": "not_sure",
+                    "project_code": active_projects[0]["code"] if active_projects else "ACME-WEB",
+                    "task": (active_projects[0]["tasks"][0] if active_projects and active_projects[0].get("tasks") else "General"),
+                    "hours": 8.0,
+                    "date": d_str,
+                },
+            }
+        )
+
+    return {
+        "status": "planned",
+        "total_missing": len(days_plan),
+        "days": days_plan,
+    }
 
 @app.get("/api/admin/metrics")
 def get_admin_metrics():
@@ -193,8 +333,9 @@ def resolve_clarification(req: ClarificationResolveRequest):
             )
         )
 
-    if req.action == "weekly_estimate":
+    if req.action == "weekly_estimate" or req.action == "not_sure":
         est_date = req.date or "2026-11-09"
+        prov = compute_provenance(work_date=est_date, logged_at="2026-11-10", is_estimated=True)
         existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == est_date)
         anomalies = evaluate_anomalies(
             date_str=est_date,
@@ -204,11 +345,16 @@ def resolve_clarification(req: ClarificationResolveRequest):
             is_billable=is_billable,
             existing_day_hours=existing_day_hours,
             confirmed_entries=confirmed,
-            skip_daily_outlier=True
+            skip_daily_outlier=(req.action == "weekly_estimate")
         )
         draft = DraftTimesheetEntry(
-            id=f"draft_{int(time.time()*1000)}_weekly_est",
+            id=f"draft_{int(time.time()*1000)}_{'not_sure' if req.action == 'not_sure' else 'weekly_est'}",
             date=est_date,
+            work_date=prov["work_date"],
+            logged_at=prov["logged_at"],
+            log_lag_days=prov["log_lag_days"],
+            provenance_tag=prov["provenance_tag"],
+            is_estimated=True,
             project_code=proj["code"],
             project_name=proj["name"],
             task=task,
@@ -216,9 +362,13 @@ def resolve_clarification(req: ClarificationResolveRequest):
             is_billable=is_billable,
             status="draft",
             user_edited=False,
-            confidence=0.94,
-            reasoning=f"Saved {req.hours}h on {proj['name']} ({proj['code']}) / {task} as a single weekly estimate.",
-            raw_input_snippet=req.raw_snippet or f"{req.hours} hours on {proj['name']} this week",
+            confidence=0.88 if req.action == "not_sure" else 0.94,
+            reasoning=(
+                f"Logged {req.hours}h estimate on {proj['name']} ({proj['code']}) / {task} because user selected Not sure."
+                if req.action == "not_sure"
+                else f"Saved {req.hours}h on {proj['name']} ({proj['code']}) / {task} as a single weekly estimate."
+            ),
+            raw_input_snippet=req.raw_snippet or f"{req.hours} hours on {proj['name']}",
             provider="Local parser",
             estimate_tag="Estimated",
             anomalies=anomalies,
@@ -233,7 +383,11 @@ def resolve_clarification(req: ClarificationResolveRequest):
             conversation_id=req.conversation_id,
             status="success",
             requires_clarification=False,
-            assistant_message=f"Staged 1 weekly estimate row ({req.hours} hrs) for {proj['name']} ({proj['code']}).",
+            assistant_message=(
+                f"Staged {req.hours} hrs on {proj['code']} for {est_date}, tagged Estimated."
+                if req.action == "not_sure"
+                else f"Staged 1 weekly estimate row ({req.hours} hrs) for {proj['name']} ({proj['code']})."
+            ),
             draft_entries=[draft],
             telemetry=Telemetry(
                 model="localllm-hybrid-v1",
@@ -250,6 +404,7 @@ def resolve_clarification(req: ClarificationResolveRequest):
         split_drafts = []
         base_ts = int(time.time() * 1000)
         for idx, d_str in enumerate(week_dates):
+            prov = compute_provenance(work_date=d_str, logged_at="2026-11-10", is_estimated=True)
             existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == d_str)
             anomalies = evaluate_anomalies(
                 date_str=d_str,
@@ -264,6 +419,11 @@ def resolve_clarification(req: ClarificationResolveRequest):
                 DraftTimesheetEntry(
                     id=f"draft_{base_ts}_split_{idx + 1}",
                     date=d_str,
+                    work_date=prov["work_date"],
+                    logged_at=prov["logged_at"],
+                    log_lag_days=prov["log_lag_days"],
+                    provenance_tag=prov["provenance_tag"],
+                    is_estimated=True,
                     project_code=proj["code"],
                     project_name=proj["name"],
                     task=task,
@@ -300,10 +460,12 @@ def resolve_clarification(req: ClarificationResolveRequest):
             )
         )
 
-    existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == req.date)
+    resolve_date = req.date or "2026-11-10"
+    prov = compute_provenance(work_date=resolve_date, logged_at="2026-11-10", is_estimated=False)
+    existing_day_hours = sum(e.get("hours", 0) for e in confirmed if e.get("date") == resolve_date)
     
     anomalies = evaluate_anomalies(
-        date_str=req.date or "2026-11-10",
+        date_str=resolve_date,
         project=proj,
         task=task,
         hours=req.hours,
@@ -314,7 +476,12 @@ def resolve_clarification(req: ClarificationResolveRequest):
     
     draft = DraftTimesheetEntry(
         id=f"draft_{int(time.time()*1000)}_clarified",
-        date=req.date or "2026-11-10",
+        date=resolve_date,
+        work_date=prov["work_date"],
+        logged_at=prov["logged_at"],
+        log_lag_days=prov["log_lag_days"],
+        provenance_tag=prov["provenance_tag"],
+        is_estimated=False,
         project_code=proj["code"],
         project_name=proj["name"],
         task=task,
@@ -382,9 +549,19 @@ def confirm_timesheets(req: TimesheetConfirmRequest):
         p_name = item.project_name or projects_map.get(item.project_code, item.project_code)
         entry_id = item.id or f"entry_{int(datetime.now().timestamp()*1000)}"
         existing_ids.add(entry_id)
+        prov = compute_provenance(
+            work_date=item.work_date or item.date,
+            logged_at=item.logged_at or "2026-11-10",
+            is_estimated=bool(item.is_estimated),
+        )
         entry_record = {
             "id": entry_id,
             "date": item.date,
+            "work_date": prov["work_date"],
+            "logged_at": prov["logged_at"],
+            "log_lag_days": prov["log_lag_days"],
+            "provenance_tag": item.provenance_tag or prov["provenance_tag"],
+            "is_estimated": prov["is_estimated"],
             "project_code": item.project_code,
             "project_name": p_name,
             "task": item.task,
@@ -403,6 +580,11 @@ def confirm_timesheets(req: TimesheetConfirmRequest):
         added_items.append(TimesheetConfirmItem(
             id=entry_record["id"],
             date=entry_record["date"],
+            work_date=entry_record["work_date"],
+            logged_at=entry_record["logged_at"],
+            log_lag_days=entry_record["log_lag_days"],
+            provenance_tag=entry_record["provenance_tag"],
+            is_estimated=entry_record["is_estimated"],
             project_code=entry_record["project_code"],
             project_name=entry_record["project_name"],
             task=entry_record["task"],

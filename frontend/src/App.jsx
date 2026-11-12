@@ -13,11 +13,15 @@ function TimeTalkWorkspace() {
     draftEntries,
     confirmedEntries,
     hourlyRate,
+    useCalendarHints,
     isLoading,
     confirmingIds,
     isConfirmingAll,
     setDemoMode,
     setHourlyRate,
+    setUseCalendarHints,
+    startReconstruction,
+    selectReconstructionOption,
     sendMessage,
     selectClarification,
     updateDraft,
@@ -55,7 +59,7 @@ function TimeTalkWorkspace() {
             <div className="flex items-baseline gap-2.5">
               <h1 className="text-base font-bold tracking-tight text-slate-900">TimeTalk</h1>
               <span className="text-xs text-slate-500">
-                Northwind Consulting (demo data)
+                Log it while you remember it.
               </span>
             </div>
 
@@ -150,6 +154,27 @@ function TimeTalkWorkspace() {
                       ))}
                     </div>
                   </div>
+                  <div className="pt-2.5 mt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[11px] font-medium text-slate-700 block">
+                        Use calendar hints
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        Off by default. Excludes private events.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={useCalendarHints}
+                      onClick={() => setUseCalendarHints((prev) => !prev)}
+                      className={`w-8 h-4.5 rounded-full transition cursor-pointer flex items-center px-0.5 ${
+                        useCalendarHints ? 'bg-blue-600 justify-end' : 'bg-slate-300 justify-start'
+                      }`}
+                    >
+                      <span className="w-3.5 h-3.5 rounded-full bg-white block" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -165,6 +190,8 @@ function TimeTalkWorkspace() {
             messages={messages}
             onSendMessage={sendMessage}
             onSelectClarification={selectClarification}
+            onStartReconstruction={startReconstruction}
+            onSelectReconstructionOption={selectReconstructionOption}
             isLoading={isLoading}
             onResetSession={resetSession}
           />

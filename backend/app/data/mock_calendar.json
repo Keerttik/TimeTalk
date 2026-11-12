@@ -1,0 +1,95 @@
+{
+  "user_id": "u_priya",
+  "timezone": "Asia/Kolkata",
+  "events": [
+    {
+      "id": "cal_1",
+      "date": "2026-11-02",
+      "title": "Acme Website Sprint Kickoff",
+      "start": "09:30",
+      "end": "11:00",
+      "duration_hours": 1.5,
+      "project_code": "ACME-WEB",
+      "task": "Design",
+      "is_private": false
+    },
+    {
+      "id": "cal_2",
+      "date": "2026-11-02",
+      "title": "Weekly Internal Standup",
+      "start": "11:30",
+      "end": "12:30",
+      "duration_hours": 1.0,
+      "project_code": "INT-OPS",
+      "task": "Standup",
+      "is_private": false
+    },
+    {
+      "id": "cal_3",
+      "date": "2026-11-03",
+      "title": "Globex Migration Architecture Review",
+      "start": "10:00",
+      "end": "12:00",
+      "duration_hours": 2.0,
+      "project_code": "GLOBEX-DATA",
+      "task": "Migration",
+      "is_private": false
+    },
+    {
+      "id": "cal_4",
+      "date": "2026-11-03",
+      "title": "Busy",
+      "start": "13:00",
+      "end": "14:00",
+      "duration_hours": 1.0,
+      "project_code": null,
+      "task": null,
+      "is_private": true
+    },
+    {
+      "id": "cal_5",
+      "date": "2026-11-04",
+      "title": "Acme Mobile QA Sync",
+      "start": "15:00",
+      "end": "16:30",
+      "duration_hours": 1.5,
+      "project_code": "ACME-MOB",
+      "task": "Development",
+      "is_private": false
+    },
+    {
+      "id": "cal_6",
+      "date": "2026-11-04",
+      "title": "Coffee Chat with Alumni",
+      "start": "17:00",
+      "end": "17:30",
+      "duration_hours": 0.5,
+      "project_code": null,
+      "task": null,
+      "is_private": false
+    },
+    {
+      "id": "cal_7",
+      "date": "2026-11-05",
+      "title": "Globex ETL Cutover Prep",
+      "start": "09:30",
+      "end": "12:30",
+      "duration_hours": 3.0,
+      "project_code": "GLOBEX-DATA",
+      "task": "Migration",
+      "is_private": false
+    },
+    {
+      "id": "cal_8",
+      "date": "2026-11-06",
+      "title": "Acme Design Sign-off",
+      "start": "14:00",
+      "end": "16:00",
+      "duration_hours": 2.0,
+      "project_code": "ACME-WEB",
+      "task": "Design",
+      "is_private": false
+    }
+  ]
+}
+

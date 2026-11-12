@@ -89,9 +89,10 @@ export const QUICK_PROMPTS = [
     text: "4 hours on Initech fieldwork today, billable."
   },
   {
-    id: "flat_8h_week",
-    label: "Flat 8h week",
-    text: "40 hours on Globex data migration this week."
+    id: "catch_up_last_week",
+    label: "Catch up last week",
+    action: "start_reconstruction",
+    text: "Catch up last week"
   }
 ];
 

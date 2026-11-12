@@ -5,7 +5,7 @@ import { useMetrics, formatRoi } from '../store/metricsStore';
 export default function AdminMacroModal({ onClose }) {
   const { metrics, teamConsultants, overrideLogs, hourlyRate } = useMetrics();
 
-  const flaggedCount = teamConsultants.filter((c) => c.flat8hPattern).length;
+  const reviewCount = teamConsultants.filter((c) => c.reviewSuggested).length;
   const totalOverrideCount = teamConsultants.reduce(
     (sum, c) => sum + (c.overrideCount || 0),
     0
@@ -18,6 +18,9 @@ export default function AdminMacroModal({ onClose }) {
       ['Session KPIs', 'Session Value (INR)', Math.round(metrics.totalValueRupees)],
       ['Session KPIs', 'Flagged Value Resolved (INR)', Math.round(metrics.leakageCaughtRupees)],
       ['Session KPIs', 'Policy Overrides (Session)', metrics.overrideCount],
+      ['Session KPIs', 'Same-Day Logging %', `${metrics.sameDayLoggingPct.toFixed(1)}%`],
+      ['Session KPIs', 'Reconstructed %', `${metrics.reconstructedPct.toFixed(1)}%`],
+      ['Session KPIs', 'Avg Log Lag (Days)', metrics.avgLogLagDays.toFixed(1)],
       ['Session KPIs', 'Tokens', metrics.totalTokens],
       ['Session KPIs', 'AI Token Cost (INR)', metrics.aiCostRupees.toFixed(2)],
       ['Session KPIs', '20-Day Projected Value (INR)', Math.round(metrics.projectedMonthlyValueRupees)],
@@ -26,15 +29,17 @@ export default function AdminMacroModal({ onClose }) {
       ['Session KPIs', 'Token ROI (Reference)', metrics.canShowRoi ? formatRoi(metrics.tokenRoi) : 'Pending 3+ entries'],
       ['Session KPIs', 'Client Billable Value Logged (Context, not counted in ROI)', Math.round(metrics.billingValueLoggedRupees)],
       [],
-      ['Consultant', 'Confirmed Hours', 'Utilization %', 'Edit Rate %', 'Same-Day Logging %', 'Overrides', 'Flat 8h Pattern'],
+      ['Consultant', 'Confirmed Hours', 'Utilization %', 'Edit Rate %', 'Same-Day %', 'Reconstructed %', 'Avg Log Lag (Days)', 'Overrides', 'Review Suggested'],
       ...teamConsultants.map((c) => [
         c.name,
         `${c.confirmedHours.toFixed(1)}h`,
         `${c.utilizationPct}%`,
         `${c.editRatePct}%`,
         `${c.sameDayLoggingPct}%`,
+        `${c.reconstructedPct}%`,
+        c.avgLogLagDays.toFixed(1),
         c.overrideCount || 0,
-        c.flat8hPattern ? `Flagged (${c.flat8hReason})` : 'Clear'
+        c.reviewSuggested ? `Review suggested (${c.reviewReason})` : 'Clear'
       ])
     ];
 
@@ -98,12 +103,14 @@ export default function AdminMacroModal({ onClose }) {
             </div>
 
             <div className="p-4 bg-white border border-slate-200 rounded-lg">
-              <span className="text-xs font-medium text-slate-500">AI cost</span>
+              <span className="text-xs font-medium text-slate-500">Same-day logging</span>
               <div className="text-xl font-bold text-slate-900 mt-1">
-                ₹{metrics.aiCostRupees.toFixed(2)}
+                {metrics.sameDayLoggingPct.toFixed(0)}%
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                {metrics.totalTokens.toLocaleString('en-IN')} tokens
+                {metrics.confirmedCount > 0
+                  ? `${metrics.sameDayCount} of ${metrics.confirmedCount} entries on work date`
+                  : 'Entries logged on work date'}
               </p>
             </div>
 
@@ -115,14 +122,14 @@ export default function AdminMacroModal({ onClose }) {
                     {formatRoi(metrics.fullyLoadedRoi)}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    Includes assumed platform cost. Illustrative, not measured.
+                    AI cost: ₹{metrics.aiCostRupees.toFixed(2)} ({metrics.totalTokens.toLocaleString('en-IN')} tok) · Includes assumed platform cost. Illustrative, not measured.
                   </p>
                 </>
               ) : (
                 <>
                   <div className="text-base font-semibold text-slate-400 mt-1">Pending</div>
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    Unlocks at 3 entries ({metrics.confirmedCount}/3). Includes assumed platform cost. Illustrative, not measured.
+                    Unlocks at 3 entries ({metrics.confirmedCount}/3) · AI cost: ₹{metrics.aiCostRupees.toFixed(2)}. Illustrative, not measured.
                   </p>
                 </>
               )}
@@ -137,7 +144,7 @@ export default function AdminMacroModal({ onClose }) {
                   Consultant logging discipline ({teamConsultants.length} consultants, Nov 9 to Nov 13)
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Flat 8h pattern flags identical daily hours, &gt;90% on one project, and 5+ days late logging
+                  Review suggested highlights uniform hours on one project logged 5+ days after the work date
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -145,7 +152,7 @@ export default function AdminMacroModal({ onClose }) {
                   {totalOverrideCount} {totalOverrideCount === 1 ? 'override' : 'overrides'}
                 </span>
                 <span className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
-                  {flaggedCount} flagged
+                  {reviewCount} review suggested
                 </span>
               </div>
             </div>
@@ -158,9 +165,11 @@ export default function AdminMacroModal({ onClose }) {
                     <th className="py-2.5 px-3 text-right">Confirmed hours</th>
                     <th className="py-2.5 px-3 text-right">Utilization</th>
                     <th className="py-2.5 px-3 text-right">Edit rate</th>
-                    <th className="py-2.5 px-3 text-right">Same-day logging %</th>
+                    <th className="py-2.5 px-3 text-right">Same-day %</th>
+                    <th className="py-2.5 px-3 text-right">Reconstructed %</th>
+                    <th className="py-2.5 px-3 text-right">Avg log lag (days)</th>
                     <th className="py-2.5 px-3 text-right">Overrides</th>
-                    <th className="py-2.5 px-4">Flat 8h pattern</th>
+                    <th className="py-2.5 px-4">Review suggested</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -168,7 +177,7 @@ export default function AdminMacroModal({ onClose }) {
                     <tr
                       key={c.id}
                       className={
-                        c.flat8hPattern
+                        c.reviewSuggested
                           ? 'bg-amber-50/35'
                           : c.isLiveUser
                           ? 'bg-blue-50/30'
@@ -196,7 +205,13 @@ export default function AdminMacroModal({ onClose }) {
                         {c.editRatePct.toFixed(1)}%
                       </td>
                       <td className="py-2.5 px-3 text-right font-medium text-slate-800">
-                        {c.sameDayLoggingPct}%
+                        {c.sameDayLoggingPct.toFixed(0)}%
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-700">
+                        {c.reconstructedPct.toFixed(0)}%
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-700">
+                        {c.avgLogLagDays.toFixed(1)}
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         {c.overrideCount > 0 ? (
@@ -208,13 +223,13 @@ export default function AdminMacroModal({ onClose }) {
                         )}
                       </td>
                       <td className="py-2.5 px-4">
-                        {c.flat8hPattern ? (
+                        {c.reviewSuggested ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="inline-flex items-center gap-1 self-start text-[11px] font-medium px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200">
                               <AlertTriangle className="w-3 h-3 text-amber-700" />
-                              Flagged
+                              Review suggested
                             </span>
-                            <span className="text-[10px] text-amber-800">{c.flat8hReason}</span>
+                            <span className="text-[10px] text-amber-900">{c.reviewReason}</span>
                           </div>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">

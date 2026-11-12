@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, ShieldCheck, Cpu, TrendingUp, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, ShieldCheck, CalendarCheck2, TrendingUp, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMetrics, formatRoi } from '../store/metricsStore';
 
 export default function AIValuePanel() {
@@ -117,23 +117,25 @@ export default function AIValuePanel() {
           </div>
         </div>
 
-        {/* 3. AI cost */}
+        {/* 3. Same-day logging */}
         <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-            <span>AI cost</span>
-            <Cpu className="w-4 h-4 text-blue-600" />
+            <span>Same-day logging</span>
+            <CalendarCheck2 className="w-4 h-4 text-blue-600" />
           </div>
           <div className="mt-2">
             <div className="text-xl font-bold text-slate-900 tracking-tight">
-              ₹{metrics.aiCostRupees.toFixed(2)}
+              {metrics.sameDayLoggingPct.toFixed(0)}%
             </div>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              {metrics.totalTokens.toLocaleString('en-IN')} tokens
+              {metrics.confirmedCount > 0
+                ? `${metrics.sameDayCount} of ${metrics.confirmedCount} entries on work date`
+                : 'Entries logged on work date'}
             </div>
           </div>
         </div>
 
-        {/* 4. Modeled ROI */}
+        {/* 4. Modeled ROI (includes AI cost in subtitle) */}
         <div className="p-4 bg-white rounded-lg border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Modeled ROI</span>
@@ -146,14 +148,14 @@ export default function AIValuePanel() {
                   {formatRoi(metrics.fullyLoadedRoi)}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                  Includes assumed platform cost. Illustrative, not measured.
+                  AI cost: ₹{metrics.aiCostRupees.toFixed(2)} ({metrics.totalTokens.toLocaleString('en-IN')} tok) · Includes assumed platform cost. Illustrative, not measured.
                 </div>
               </>
             ) : (
               <>
                 <div className="text-base font-semibold text-slate-400 tracking-tight">Pending</div>
                 <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                  Unlocks at 3 entries ({metrics.confirmedCount}/3). Includes assumed platform cost. Illustrative, not measured.
+                  Unlocks at 3 entries ({metrics.confirmedCount}/3) · AI cost: ₹{metrics.aiCostRupees.toFixed(2)}. Illustrative, not measured.
                 </div>
               </>
             )}

@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, RefreshCw, HelpCircle } from 'lucide-react';
+import { Send, Bot, User, RefreshCw, HelpCircle, History } from 'lucide-react';
 import { QUICK_PROMPTS } from '../mockData';
 
 export default function ChatInterface({
   messages,
   onSendMessage,
   onSelectClarification,
+  onStartReconstruction,
+  onSelectReconstructionOption,
   isLoading,
   onResetSession
 }) {
@@ -23,9 +25,13 @@ export default function ChatInterface({
     setInput('');
   };
 
-  const handleChipClick = (promptText) => {
+  const handleChipClick = (qp) => {
     if (isLoading) return;
-    setInput(promptText);
+    if (qp.action === 'start_reconstruction' && onStartReconstruction) {
+      onStartReconstruction();
+      return;
+    }
+    setInput(qp.text);
   };
 
   return (
@@ -44,17 +50,31 @@ export default function ChatInterface({
           </div>
         </div>
 
-        {onResetSession && (
-          <button
-            type="button"
-            onClick={() => onResetSession()}
-            title="Reset demo session"
-            className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-[#F7F8FA] border border-slate-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Reset</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onStartReconstruction && (
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={onStartReconstruction}
+              title="Walk through missing working days one day at a time"
+              className="flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 border border-blue-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer whitespace-nowrap"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Catch up on past days</span>
+            </button>
+          )}
+          {onResetSession && (
+            <button
+              type="button"
+              onClick={() => onResetSession()}
+              title="Reset demo session"
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-[#F7F8FA] border border-slate-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Reset</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Suggestion Chips (Wrapping, No Horizontal Scrollbar) */}
@@ -64,7 +84,7 @@ export default function ChatInterface({
           <button
             key={qp.id}
             type="button"
-            onClick={() => handleChipClick(qp.text)}
+            onClick={() => handleChipClick(qp)}
             title={qp.text}
             className="text-xs bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-medium px-2.5 py-1 rounded-lg border border-slate-200 hover:border-blue-300 transition cursor-pointer"
           >
@@ -105,7 +125,44 @@ export default function ChatInterface({
                       : 'bg-[#F7F8FA] text-slate-800 border border-slate-200'
                   }`}
                 >
+                  {msg.reconstructionProgress && (
+                    <div className="mb-1.5">
+                      <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                        {msg.reconstructionProgress}
+                      </span>
+                    </div>
+                  )}
                   <p className="whitespace-pre-wrap">{msg.text}</p>
+
+                  {/* Reconstruction Day Options */}
+                  {msg.reconstructionOptions && msg.reconstructionOptions.length > 0 && (
+                    <div className="mt-2.5 pt-2.5 border-t border-slate-200 flex flex-col gap-1.5">
+                      {msg.reconstructionOptions.map((opt, optIdx) => {
+                        const isNotSure = opt.action === 'not_sure';
+                        const isCal = opt.source === 'calendar_hint';
+                        return (
+                          <button
+                            key={optIdx}
+                            type="button"
+                            disabled={isLoading}
+                            onClick={() => onSelectReconstructionOption && onSelectReconstructionOption(opt)}
+                            className={`text-left px-2.5 py-1.5 rounded-lg border text-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-between gap-2 ${
+                              isNotSure
+                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200 font-medium'
+                                : 'bg-white hover:bg-blue-50 text-slate-800 hover:text-blue-700 border-slate-200 hover:border-blue-300'
+                            }`}
+                          >
+                            <span className="font-medium truncate">{opt.label}</span>
+                            {isCal && (
+                              <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-lg shrink-0">
+                                From calendar, suggestion only
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Clarification Options */}
                   {msg.clarificationOptions && msg.clarificationOptions.length > 0 && (

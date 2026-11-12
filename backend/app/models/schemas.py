@@ -17,6 +17,11 @@ class Telemetry(BaseModel):
 class DraftTimesheetEntry(BaseModel):
     id: str
     date: str  # YYYY-MM-DD
+    work_date: Optional[str] = None
+    logged_at: Optional[str] = None
+    log_lag_days: int = 0
+    provenance_tag: str = "Same day"
+    is_estimated: bool = False
     project_code: str
     project_name: str
     task: str
@@ -70,6 +75,11 @@ class ChatParseResponse(BaseModel):
 class TimesheetConfirmItem(BaseModel):
     id: Optional[str] = None
     date: str
+    work_date: Optional[str] = None
+    logged_at: Optional[str] = None
+    log_lag_days: int = 0
+    provenance_tag: Optional[str] = None
+    is_estimated: bool = False
     project_code: str
     project_name: Optional[str] = None
     task: str
@@ -81,6 +91,12 @@ class TimesheetConfirmItem(BaseModel):
     overridden_rules: Optional[List[str]] = None
     overridden_messages: Optional[List[str]] = None
     override_timestamp: Optional[str] = None
+
+class ReconstructionPlanRequest(BaseModel):
+    week_dates: Optional[List[str]] = None
+    existing_dates: Optional[List[str]] = None
+    use_calendar_hints: bool = False
+    logged_at: Optional[str] = "2026-11-10"
 
 class TimesheetConfirmRequest(BaseModel):
     user_id: str = "u_priya"

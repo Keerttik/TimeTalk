@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from .matcher import load_catalogue, match_activity_to_catalogue
 from .anomalies import evaluate_anomalies, load_timesheets
+from .calendar_hints import compute_provenance
 
 load_dotenv()
 
@@ -560,9 +561,19 @@ def extract_timesheet_drafts(
             else (len(user_message.split()) * 4 + 180)
         )
 
+        prov = compute_provenance(
+            work_date=date_str,
+            logged_at=ref_date.strftime("%Y-%m-%d"),
+            is_estimated=False,
+        )
         entry = {
             "id": f"draft_{int(time.time()*1000)}_{entry_counter}",
             "date": date_str,
+            "work_date": prov["work_date"],
+            "logged_at": prov["logged_at"],
+            "log_lag_days": prov["log_lag_days"],
+            "provenance_tag": prov["provenance_tag"],
+            "is_estimated": False,
             "project_code": proj["code"],
             "project_name": proj["name"],
             "task": task,

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import AnomalyWarning from './AnomalyWarning';
 import { MOCK_CATALOGUE } from '../mockData';
+import { computeEntryProvenance, DEMO_TODAY_DATE } from '../store/metricsStore';
 
 export default function TimesheetGrid({
   draftEntries = [],
@@ -76,6 +77,7 @@ export default function TimesheetGrid({
     const trace = row.trace || { model: 'openai/gpt-oss-20b', tokens: 280, latency_ms: 195 };
     const confidencePct = Math.round((row.confidence || 0.9) * 100);
     const extractorProvider = getExtractorProvider(row);
+    const prov = computeEntryProvenance(row, DEMO_TODAY_DATE);
     const overrideRulesText =
       Array.isArray(row.overridden_rules) && row.overridden_rules.length > 0
         ? row.overridden_rules.join(', ')
@@ -101,6 +103,9 @@ export default function TimesheetGrid({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0 text-[11px] text-slate-600">
+                <span className="px-2 py-0.5 rounded-lg bg-[#F7F8FA] border border-slate-200">
+                  Provenance: <strong className="text-slate-900">{prov.provenance_tag}</strong> (work {prov.work_date}, logged {prov.logged_at})
+                </span>
                 <span className="px-2 py-0.5 rounded-lg bg-[#F7F8FA] border border-slate-200">
                   Extracted by: <strong className="text-slate-900">{extractorProvider}</strong>
                 </span>
@@ -203,6 +208,13 @@ export default function TimesheetGrid({
               const isExpanded = expandedWhyId === draft.id;
               const isRowConfirming = confirmingIds.includes(draft.id) || isConfirmingAll;
               const isFallbackParser = getExtractorProvider(draft) === 'Local parser';
+              const prov = computeEntryProvenance(draft, DEMO_TODAY_DATE);
+              const provBadgeClass =
+                prov.provenance_tone === 'amber'
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : prov.provenance_tone === 'green'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-slate-100 text-slate-600 border-slate-200';
 
               return (
                 <React.Fragment key={draft.id}>
@@ -320,7 +332,10 @@ export default function TimesheetGrid({
                             Fallback parser
                           </span>
                         )}
-                        {draft.estimate_tag && (
+                        <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-lg border whitespace-nowrap ${provBadgeClass}`}>
+                          {prov.provenance_tag}
+                        </span>
+                        {draft.estimate_tag && draft.estimate_tag !== prov.provenance_tag && (
                           <span className="inline-flex items-center text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 whitespace-nowrap">
                             {draft.estimate_tag}
                           </span>
@@ -443,6 +458,13 @@ export default function TimesheetGrid({
             {confirmedEntries.map((row) => {
               const isExpanded = expandedWhyId === row.id;
               const isFallbackParser = getExtractorProvider(row) === 'Local parser';
+              const prov = computeEntryProvenance(row, DEMO_TODAY_DATE);
+              const provBadgeClass =
+                prov.provenance_tone === 'amber'
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : prov.provenance_tone === 'green'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-slate-100 text-slate-600 border-slate-200';
               return (
                 <React.Fragment key={row.id}>
                   <tr className="bg-white hover:bg-[#F7F8FA] transition border-l-2 border-l-emerald-500">
@@ -485,7 +507,10 @@ export default function TimesheetGrid({
                             Fallback parser
                           </span>
                         )}
-                        {row.estimate_tag && (
+                        <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-lg border whitespace-nowrap ${provBadgeClass}`}>
+                          {prov.provenance_tag}
+                        </span>
+                        {row.estimate_tag && row.estimate_tag !== prov.provenance_tag && (
                           <span className="inline-flex items-center text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 whitespace-nowrap">
                             {row.estimate_tag}
                           </span>

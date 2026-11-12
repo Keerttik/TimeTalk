@@ -15,7 +15,7 @@ export const WORKING_DAYS_PER_MONTH = 20;
 
 export const INITIAL_GREETING_MESSAGE = {
   sender: 'bot',
-  text: "Hi Priya, tell me what you worked on yesterday or this week in plain English, and I'll prepare draft entries for your review.",
+  text: "Hi Priya, tell me what you worked on today, or catch up on past days. I'll prepare drafts for your review.",
   timestamp: 'Today'
 };
 
@@ -92,6 +92,47 @@ export const INITIAL_SEED_LEAKAGE_INR = 0;
 const PROJECTS_BY_CODE = Object.fromEntries(
   MOCK_CATALOGUE.projects.map((p) => [p.code, p])
 );
+
+export const DEMO_TODAY_DATE = '2026-11-10';
+
+export function computeEntryProvenance(entry, defaultLoggedAt = DEMO_TODAY_DATE) {
+  const workDate = (entry?.work_date || entry?.date || defaultLoggedAt).slice(0, 10);
+  const loggedAt = (entry?.logged_at || defaultLoggedAt).slice(0, 10);
+  const isEstimated = Boolean(
+    entry?.is_estimated ||
+      entry?.estimate_tag === 'Estimated' ||
+      entry?.provenance_tag === 'Estimated'
+  );
+
+  let lagDays = Number.isFinite(Number(entry?.log_lag_days)) ? Number(entry.log_lag_days) : null;
+  if (lagDays === null) {
+    const wMs = Date.parse(`${workDate}T00:00:00Z`);
+    const lMs = Date.parse(`${loggedAt}T00:00:00Z`);
+    lagDays = Number.isFinite(wMs) && Number.isFinite(lMs) ? Math.max(0, Math.round((lMs - wMs) / 86400000)) : 0;
+  }
+
+  let provenanceTag = entry?.provenance_tag;
+  let provenanceTone = 'green';
+  if (isEstimated) {
+    provenanceTag = 'Estimated';
+    provenanceTone = 'amber';
+  } else if (lagDays === 0) {
+    provenanceTag = 'Same day';
+    provenanceTone = 'green';
+  } else {
+    provenanceTag = `Reconstructed, ${lagDays}d later`;
+    provenanceTone = 'grey';
+  }
+
+  return {
+    work_date: workDate,
+    logged_at: loggedAt,
+    log_lag_days: lagDays,
+    provenance_tag: provenanceTag,
+    provenance_tone: provenanceTone,
+    is_estimated: isEstimated
+  };
+}
 
 function formatHoursCompact(hours) {
   const n = Number(hours) || 0;
@@ -226,6 +267,20 @@ export function computeSharedMetrics({
     confirmedCount > 0 ? Math.round((editedCount / confirmedCount) * 1000) / 10 : 0;
   const overrideCount = confirmedEntries.filter((e) => Boolean(e.is_override)).length;
 
+  const provenanceList = confirmedEntries.map((e) => computeEntryProvenance(e));
+  const sameDayCount = provenanceList.filter((p) => !p.is_estimated && p.log_lag_days === 0).length;
+  const sameDayLoggingPct =
+    confirmedCount > 0 ? Math.round((sameDayCount / confirmedCount) * 1000) / 10 : 0;
+  const reconstructedCount = provenanceList.filter((p) => !p.is_estimated && p.log_lag_days > 0).length;
+  const reconstructedPct =
+    confirmedCount > 0 ? Math.round((reconstructedCount / confirmedCount) * 1000) / 10 : 0;
+  const avgLogLagDays =
+    confirmedCount > 0
+      ? Math.round(
+          (provenanceList.reduce((sum, p) => sum + p.log_lag_days, 0) / confirmedCount) * 10
+        ) / 10
+      : 0;
+
   // Context only (not counted in ROI)
   const billingValueLoggedRupees = confirmedEntries.reduce((sum, e) => {
     if (!e.is_billable) return sum;
@@ -277,6 +332,11 @@ export function computeSharedMetrics({
     billableUtilizationPct,
     editRatePct,
     overrideCount,
+    sameDayCount,
+    sameDayLoggingPct,
+    reconstructedCount,
+    reconstructedPct,
+    avgLogLagDays,
     billingValueLoggedRupees,
     timeSavedMinutes,
     valueOfTimeSavedRupees,
@@ -312,9 +372,14 @@ export function analyzeConsultantWeek(consultant) {
   const entryOverrides = entries.filter((e) => Boolean(e.is_override)).length;
   const overrideCount = entryOverrides > 0 ? entryOverrides : Number(consultant.override_count) || 0;
 
-  const sameDayCount = entries.filter((e) => (Number(e.days_late) || 0) === 0).length;
+  const sameDayCount = entries.filter((e) => !e.is_estimated && (Number(e.days_late) || 0) === 0).length;
   const sameDayLoggingPct =
-    entries.length > 0 ? Math.round((sameDayCount / entries.length) * 100) : 0;
+    entries.length > 0 ? Math.round((sameDayCount / entries.length) * 1000) / 10 : 0;
+  const reconstructedCount = entries.filter(
+    (e) => !e.is_estimated && (Number(e.days_late) || 0) > 0
+  ).length;
+  const reconstructedPct =
+    entries.length > 0 ? Math.round((reconstructedCount / entries.length) * 1000) / 10 : 0;
 
   const hoursByDay = {};
   const hoursByProject = {};
@@ -340,15 +405,17 @@ export function analyzeConsultantWeek(consultant) {
   }
   const oneProjectOver90 = topProjectShare > 0.9;
 
-  const avgDaysLate =
+  const avgLogLagDays =
     entries.length > 0
-      ? entries.reduce((sum, e) => sum + (Number(e.days_late) || 0), 0) / entries.length
+      ? Math.round(
+          (entries.reduce((sum, e) => sum + (Number(e.days_late) || 0), 0) / entries.length) * 10
+        ) / 10
       : 0;
-  const logged5PlusDaysLate = avgDaysLate >= 5;
+  const logged5PlusDaysLate = avgLogLagDays >= 5;
 
-  const flat8hPattern = identicalDailyHours && oneProjectOver90 && logged5PlusDaysLate;
-  const flat8hReason = flat8hPattern
-    ? `${dailyTotals[0].toFixed(1)}h/day · ${Math.round(topProjectShare * 100)}% ${topProjectCode} · ${Math.round(avgDaysLate)}d late`
+  const reviewSuggested = identicalDailyHours && oneProjectOver90 && logged5PlusDaysLate;
+  const reviewReason = reviewSuggested
+    ? `Identical hours, ${Math.round(topProjectShare * 100)}% one project (${topProjectCode}), logged ${Math.round(avgLogLagDays)} days late`
     : null;
 
   return {
@@ -361,8 +428,12 @@ export function analyzeConsultantWeek(consultant) {
     editRatePct,
     overrideCount,
     sameDayLoggingPct,
-    flat8hPattern,
-    flat8hReason
+    reconstructedPct,
+    avgLogLagDays,
+    reviewSuggested,
+    reviewReason,
+    flat8hPattern: reviewSuggested,
+    flat8hReason: reviewReason
   };
 }
 
@@ -397,6 +468,12 @@ export function MetricsProvider({ children }) {
   const [leakageCaughtRupees, setLeakageCaughtRupees] = useState(INITIAL_SEED_LEAKAGE_INR);
   const [hourlyRate, setHourlyRate] = useState(1500);
   const [fullyLoadedMonthlyCost, setFullyLoadedMonthlyCost] = useState(40);
+  const [useCalendarHints, setUseCalendarHints] = useState(false);
+  const [reconstructionState, setReconstructionState] = useState({
+    active: false,
+    days: [],
+    currentIndex: 0
+  });
   const [chatSeconds, setChatSeconds] = useState(() => (isStartEmpty ? 0 : 25));
   const [isLoading, setIsLoading] = useState(false);
   const [confirmingIds, setConfirmingIds] = useState([]);
@@ -436,6 +513,157 @@ export function MetricsProvider({ children }) {
     setChatSeconds(Math.max(10, Math.min(90, Math.floor((Date.now() - sessionStartTime) / 1000))));
   }, [sessionStartTime]);
 
+  const buildReconstructionPromptMsg = useCallback((dayObj, index, total) => {
+    const opts = [...(dayObj.suggestions || []), dayObj.not_sure_option].filter(Boolean);
+    return {
+      sender: 'bot',
+      text: dayObj.prompt,
+      reconstructionProgress: `Day ${index + 1} of ${total}`,
+      reconstructionOptions: opts,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+  }, []);
+
+  const startReconstruction = useCallback(async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const existingDates = Array.from(
+        new Set([...draftEntries, ...confirmedEntries].map((e) => e.date).filter(Boolean))
+      );
+      const res = await fetch('/api/reconstruction/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          week_dates: ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'],
+          existing_dates: existingDates,
+          use_calendar_hints: useCalendarHints,
+          logged_at: DEMO_TODAY_DATE
+        })
+      });
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      const data = await res.json();
+      const days = data.days || [];
+      if (days.length === 0) {
+        setReconstructionState({ active: false, days: [], currentIndex: 0 });
+        setMessages((prev) => [
+          ...prev,
+          {
+            sender: 'bot',
+            text: 'All working days in that week already have entries.',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+        return;
+      }
+
+      setReconstructionState({ active: true, days, currentIndex: 0 });
+      setMessages((prev) => [...prev, buildReconstructionPromptMsg(days[0], 0, days.length)]);
+    } catch (err) {
+      console.error('Reconstruction plan failed:', err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: 'bot',
+          text: 'Could not load past-day reconstruction plan. Check that the API server is running.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, draftEntries, confirmedEntries, useCalendarHints, buildReconstructionPromptMsg]);
+
+  const selectReconstructionOption = useCallback(
+    async (option) => {
+      if (!reconstructionState.active || isLoading) return;
+      const currentDay = reconstructionState.days[reconstructionState.currentIndex];
+      if (!currentDay) return;
+
+      const userMsg = {
+        sender: 'user',
+        text: option.label,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setIsLoading(true);
+      syncActiveChatSeconds();
+
+      try {
+        const res = await fetch('/api/chat/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            user_id: 'u_priya',
+            project_code: option.project_code,
+            task: option.task || 'General',
+            hours: option.hours ?? 8.0,
+            date: currentDay.date,
+            raw_snippet: option.calendar_title || option.label,
+            action: option.action || null
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const normalized = normalizeTelemetry(data.telemetry, data.draft_entries);
+          if (normalized) {
+            setTelemetryHistory((prev) => [...prev, normalized]);
+          }
+          if (data.draft_entries && data.draft_entries.length > 0) {
+            const stamped = data.draft_entries.map((d) => ({
+              ...d,
+              ...computeEntryProvenance(d, DEMO_TODAY_DATE)
+            }));
+            setDraftEntries((prev) =>
+              reconcileDraftDuplicates([...prev, ...stamped], confirmedEntries)
+            );
+          }
+
+          const nextIdx = reconstructionState.currentIndex + 1;
+          if (nextIdx < reconstructionState.days.length) {
+            setReconstructionState((prev) => ({ ...prev, currentIndex: nextIdx }));
+            setMessages((prev) => [
+              ...prev,
+              {
+                sender: 'bot',
+                text: data.assistant_message || `Staged draft for ${currentDay.date}.`,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              },
+              buildReconstructionPromptMsg(
+                reconstructionState.days[nextIdx],
+                nextIdx,
+                reconstructionState.days.length
+              )
+            ]);
+          } else {
+            setReconstructionState({ active: false, days: [], currentIndex: 0 });
+            setMessages((prev) => [
+              ...prev,
+              {
+                sender: 'bot',
+                text: `${data.assistant_message || 'Staged draft.'} All ${reconstructionState.days.length} past days are ready for your review on the right.`,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              }
+            ]);
+          }
+        }
+      } catch (err) {
+        console.error('Reconstruction step failed:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [
+      reconstructionState,
+      isLoading,
+      syncActiveChatSeconds,
+      conversationId,
+      confirmedEntries,
+      buildReconstructionPromptMsg
+    ]
+  );
+
   const sendMessage = useCallback(
     async (userText) => {
       const userMsg = {
@@ -447,6 +675,11 @@ export function MetricsProvider({ children }) {
       setIsLoading(true);
       syncActiveChatSeconds();
 
+      const activeDay = reconstructionState.active
+        ? reconstructionState.days[reconstructionState.currentIndex]
+        : null;
+      const messageForApi = activeDay ? `${userText} on ${activeDay.date}` : userText;
+
       try {
         const response = await fetch('/api/chat/parse', {
           method: 'POST',
@@ -454,7 +687,7 @@ export function MetricsProvider({ children }) {
           body: JSON.stringify({
             conversation_id: conversationId,
             user_id: 'u_priya',
-            message: userText,
+            message: messageForApi,
             client_timestamp: '2026-11-10T20:00:00+05:30'
           })
         });
@@ -475,12 +708,44 @@ export function MetricsProvider({ children }) {
           clarificationOptions: data.clarification_options,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
-        setMessages((prev) => [...prev, botMsg]);
 
         if (data.draft_entries && data.draft_entries.length > 0) {
+          const stamped = data.draft_entries.map((d) => ({
+            ...d,
+            ...computeEntryProvenance(d, DEMO_TODAY_DATE)
+          }));
           setDraftEntries((prev) =>
-            reconcileDraftDuplicates([...prev, ...data.draft_entries], confirmedEntries)
+            reconcileDraftDuplicates([...prev, ...stamped], confirmedEntries)
           );
+        }
+
+        if (activeDay && !data.requires_clarification && data.draft_entries?.length > 0) {
+          const nextIdx = reconstructionState.currentIndex + 1;
+          if (nextIdx < reconstructionState.days.length) {
+            setReconstructionState((prev) => ({ ...prev, currentIndex: nextIdx }));
+            setMessages((prev) => [
+              ...prev,
+              botMsg,
+              buildReconstructionPromptMsg(
+                reconstructionState.days[nextIdx],
+                nextIdx,
+                reconstructionState.days.length
+              )
+            ]);
+          } else {
+            setReconstructionState({ active: false, days: [], currentIndex: 0 });
+            setMessages((prev) => [
+              ...prev,
+              botMsg,
+              {
+                sender: 'bot',
+                text: `All ${reconstructionState.days.length} past days are staged for your review.`,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              }
+            ]);
+          }
+        } else {
+          setMessages((prev) => [...prev, botMsg]);
         }
       } catch (err) {
         console.error('Chat parse failed:', err);
@@ -496,7 +761,13 @@ export function MetricsProvider({ children }) {
         setIsLoading(false);
       }
     },
-    [conversationId, confirmedEntries, syncActiveChatSeconds]
+    [
+      conversationId,
+      confirmedEntries,
+      syncActiveChatSeconds,
+      reconstructionState,
+      buildReconstructionPromptMsg
+    ]
   );
 
   const selectClarification = useCallback(
@@ -744,8 +1015,9 @@ export function MetricsProvider({ children }) {
 
         const confirmedItem = {
           ...draft,
+          ...computeEntryProvenance(draft, DEMO_TODAY_DATE),
           status: 'confirmed',
-          days_late: 0,
+          days_late: computeEntryProvenance(draft, DEMO_TODAY_DATE).log_lag_days,
           id: `conf_${draft.id}`,
           is_override: isOverride,
           override_reason: isOverride ? trimmedReason : null,
@@ -810,12 +1082,16 @@ export function MetricsProvider({ children }) {
       }
 
       const cleanIds = new Set(cleanDrafts.map((d) => d.id));
-      const newlyConfirmed = cleanDrafts.map((d) => ({
-        ...d,
-        status: 'confirmed',
-        days_late: 0,
-        id: `conf_${d.id}`
-      }));
+      const newlyConfirmed = cleanDrafts.map((d) => {
+        const prov = computeEntryProvenance(d, DEMO_TODAY_DATE);
+        return {
+          ...d,
+          ...prov,
+          status: 'confirmed',
+          days_late: prov.log_lag_days,
+          id: `conf_${d.id}`
+        };
+      });
 
       const nextConfirmed = [...confirmedEntries, ...newlyConfirmed];
       setConfirmedEntries(nextConfirmed);
@@ -839,6 +1115,7 @@ export function MetricsProvider({ children }) {
       } catch (e) {
         console.log('Reset store call error:', e);
       }
+      setReconstructionState({ active: false, days: [], currentIndex: 0 });
       if (mode === 'empty') {
         setDraftEntries([]);
         setConfirmedEntries([]);
@@ -898,15 +1175,19 @@ export function MetricsProvider({ children }) {
       name: 'Priya Sharma',
       role: 'Senior Consultant (You)',
       isLiveUser: true,
-      entries: confirmedEntries.map((e) => ({
-        date: e.date,
-        project_code: e.project_code,
-        hours: e.hours,
-        is_billable: e.is_billable,
-        user_edited: e.user_edited,
-        is_override: e.is_override,
-        days_late: e.days_late ?? 0
-      }))
+      entries: confirmedEntries.map((e) => {
+        const prov = computeEntryProvenance(e, DEMO_TODAY_DATE);
+        return {
+          date: e.date,
+          project_code: e.project_code,
+          hours: e.hours,
+          is_billable: e.is_billable,
+          user_edited: e.user_edited,
+          is_override: e.is_override,
+          is_estimated: prov.is_estimated,
+          days_late: prov.log_lag_days
+        };
+      })
     });
     const peers = TEAM_CONSULTANTS_SEED.map(analyzeConsultantWeek);
     return [priyaLive, ...peers];
@@ -926,6 +1207,8 @@ export function MetricsProvider({ children }) {
     leakageCaughtRupees,
     hourlyRate,
     fullyLoadedMonthlyCost,
+    useCalendarHints,
+    reconstructionState,
     chatSeconds,
     isLoading,
     confirmingIds,
@@ -936,6 +1219,9 @@ export function MetricsProvider({ children }) {
     setDemoMode,
     setHourlyRate,
     setFullyLoadedMonthlyCost,
+    setUseCalendarHints,
+    startReconstruction,
+    selectReconstructionOption,
     sendMessage,
     selectClarification,
     updateDraft,
